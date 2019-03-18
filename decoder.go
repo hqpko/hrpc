@@ -8,7 +8,7 @@ import (
 )
 
 type decoder interface {
-	decode(reply interface{}) error
+	decode(data []byte, reply interface{}) error
 }
 
 type gobDecoder struct {
@@ -20,7 +20,7 @@ func newGobDecoder(buffer *hbuffer.Buffer) *gobDecoder {
 	return &gobDecoder{dec: gob.NewDecoder(buffer), buffer: buffer}
 }
 
-func (e *gobDecoder) decode(reply interface{}) error {
+func (e *gobDecoder) decode(data []byte, reply interface{}) error {
 	e.buffer.Reset()
 	if err := e.dec.Decode(reply); err != nil {
 		return err
@@ -29,16 +29,15 @@ func (e *gobDecoder) decode(reply interface{}) error {
 }
 
 type pbDecoder struct {
-	buffer *hbuffer.Buffer
 }
 
-func newPbDecoder(buffer *hbuffer.Buffer) *pbDecoder {
-	return &pbDecoder{buffer: buffer}
+func newPbDecoder() *pbDecoder {
+	return &pbDecoder{}
 }
 
-func (e *pbDecoder) decode(reply interface{}) error {
+func (e *pbDecoder) decode(data []byte, reply interface{}) error {
 	if pb, ok := reply.(proto.Message); ok {
-		return proto.Unmarshal(e.buffer.GetRestOfBytes(), pb)
+		return proto.Unmarshal(data, pb)
 	}
 	return ErrNotPbMessage
 }

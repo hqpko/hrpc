@@ -11,7 +11,8 @@ import (
 )
 
 const (
-	defChannelSize = 1 << 6
+	defChannelSize      = 1 << 6
+	defReadChannelCount = 1 << 4
 )
 
 type Call struct {
@@ -47,6 +48,7 @@ type Client struct {
 	enc     encoder // gob,pb
 	dec     decoder // gob,pb
 
+	readBuffer  *hbuffer.Buffer
 	buffer      *hbuffer.Buffer
 	socket      *hnet.Socket
 	sendChannel *hconcurrent.Concurrent
@@ -61,11 +63,34 @@ func Connect(network, addr string) (*Client, error) {
 }
 
 func NewClient(socket *hnet.Socket) *Client {
-	buffer := hbuffer.NewBuffer()
-	c := &Client{pending: sync.Map{}, socket: socket, buffer: buffer, enc: newPbEncoder(), dec: newPbDecoder(buffer)}
+	c := &Client{pending: sync.Map{}, socket: socket, readBuffer: hbuffer.NewBuffer(), buffer: hbuffer.NewBuffer(), enc: newPbEncoder(), dec: newPbDecoder()}
 	c.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerSend)
 	c.sendChannel.Start()
+
+	go c.read()
 	return c
+}
+
+func (c *Client) read() {
+	_ = c.socket.ReadBuffer(func(buffer *hbuffer.Buffer) {
+		seq, err := buffer.ReadUint64()
+		if err != nil {
+			return
+		}
+		callI, ok := c.pending.Load(seq)
+		if !ok {
+			return
+		}
+		call := callI.(*Call)
+		c.pending.Delete(seq)
+
+		err = c.dec.decode(buffer.GetRestOfBytes(), call.reply)
+		if !call.doneIfErr(err) {
+			call.done <- call
+		}
+	}, func() *hbuffer.Buffer {
+		return c.readBuffer
+	})
 }
 
 //
@@ -79,11 +104,15 @@ func NewClient(socket *hnet.Socket) *Client {
 
 func (c *Client) handlerSend(i interface{}) interface{} {
 	if call, ok := i.(*Call); ok {
+		c.buffer.Reset()
 		b, e := c.enc.encode(call.args)
 		if call.doneIfErr(e) {
 			return nil
 		}
-		if call.doneIfErr(c.socket.WritePacket(b)) {
+		c.buffer.WriteInt32(call.protocolID)
+		c.buffer.WriteUint64(call.seq)
+		c.buffer.WriteBytes(b)
+		if call.doneIfErr(c.socket.WritePacket(c.buffer.GetBytes())) {
 			return nil
 		}
 		if !call.oneWay {
