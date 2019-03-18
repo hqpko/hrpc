@@ -1,52 +1,59 @@
 package tests
 
 import (
-	"fmt"
+	"net/rpc"
 	"testing"
 	"time"
 
 	"github.com/hqpko/hnet"
-
-	"github.com/hqpko/hrpc"
 )
 
-func TestRPC(t *testing.T) {
-	addr := "127.0.0.1:9093"
-	go func() {
-		_ = hnet.ListenSocket("tcp", addr, func(socket *hnet.Socket) {
-			s := hrpc.NewServer()
-			s.Register(1, func(args *Req, reply *Resp) error {
-				reply.B = args.A + 1
-				return nil
-			})
-			_ = s.Listen(socket)
-		}, hnet.NewOption())
-	}()
-
-	time.Sleep(100 * time.Millisecond)
-	client, _ := hrpc.Connect("tcp", addr)
-	reply := &Resp{}
-	e := client.Call(1, &Req{A: 1}, reply)
-	fmt.Println(e, reply)
+type RPCReq struct {
 }
 
-func BenchmarkRPC(b *testing.B) {
-	addr := "127.0.0.1:9094"
+func (r *RPCReq) Add(req *Req, resp *Resp) error {
+	resp.B = req.A + 1
+	return nil
+}
+
+func BenchmarkRPC_Call(b *testing.B) {
+	addr := testGetAddr()
 	go func() {
 		_ = hnet.ListenSocket("tcp", addr, func(socket *hnet.Socket) {
-			s := hrpc.NewServer()
-			s.Register(1, func(args *Req, reply *Resp) error {
-				reply.B = args.A + 1
-				return nil
-			})
-			_ = s.Listen(socket)
+			server := rpc.NewServer()
+			_ = server.Register(new(RPCReq))
+			server.ServeConn(socket)
 		}, hnet.NewOption())
 	}()
 
 	time.Sleep(100 * time.Millisecond)
-	client, _ := hrpc.Connect("tcp", addr)
+	s, _ := hnet.ConnectSocket("tcp", addr, hnet.NewOption())
+	client := rpc.NewClient(s)
+	b.StartTimer()
+	defer b.StopTimer()
 	for i := 0; i < b.N; i++ {
-		reply := &Resp{}
-		_ = client.Call(1, &Req{A: 1}, reply)
+		resp := &Resp{}
+		_ = client.Call("RPCReq.Add", &Req{A: 1}, resp)
+	}
+}
+
+func BenchmarkRPC_Go(b *testing.B) {
+	addr := testGetAddr()
+	go func() {
+		_ = hnet.ListenSocket("tcp", addr, func(socket *hnet.Socket) {
+			server := rpc.NewServer()
+			_ = server.Register(new(RPCReq))
+			server.ServeConn(socket)
+		}, hnet.NewOption())
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	s, _ := hnet.ConnectSocket("tcp", addr, hnet.NewOption())
+	client := rpc.NewClient(s)
+	b.StartTimer()
+	defer b.StopTimer()
+	for i := 0; i < b.N; i++ {
+		resp := &Resp{}
+		_ = client.Go("RPCReq.Add", &Req{A: 1}, resp, make(chan *rpc.Call, 1))
 	}
 }
