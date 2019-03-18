@@ -4,6 +4,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/hqpko/hbuffer"
+
 	"github.com/hqpko/hconcurrent"
 	"github.com/hqpko/hnet"
 )
@@ -22,6 +24,15 @@ type Call struct {
 	done       chan *Call
 }
 
+func (c *Call) doneIfErr(e error) bool {
+	if e != nil {
+		c.error = e
+		c.done <- c
+		return true
+	}
+	return false
+}
+
 func (c *Call) Done() *Call {
 	return <-c.done
 }
@@ -33,9 +44,10 @@ func (c *Call) Error() error {
 type Client struct {
 	seq     uint64
 	pending sync.Map
-	enc     interface{} // gob,pb
-	dec     interface{} // gob,pb
+	enc     encoder // gob,pb
+	dec     decoder // gob,pb
 
+	buffer      *hbuffer.Buffer
 	socket      *hnet.Socket
 	sendChannel *hconcurrent.Concurrent
 }
@@ -49,18 +61,31 @@ func Connect(network, addr string) (*Client, error) {
 }
 
 func NewClient(socket *hnet.Socket) *Client {
-	c := &Client{pending: sync.Map{}, socket: socket}
+	buffer := hbuffer.NewBuffer()
+	c := &Client{pending: sync.Map{}, socket: socket, buffer: buffer, enc: newPbEncoder(), dec: newPbDecoder(buffer)}
 	c.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerSend)
 	c.sendChannel.Start()
 	return c
 }
 
-func NewClientGob(socket *hnet.Socket)*Client{
-
-}
+//
+//func NewClientGob(socket *hnet.Socket) *Client {
+//
+//}
+//
+//func newClient(socket *hnet.Socket, enc encoder, dec decoder) *Client {
+//
+//}
 
 func (c *Client) handlerSend(i interface{}) interface{} {
 	if call, ok := i.(*Call); ok {
+		b, e := c.enc.encode(call.args)
+		if call.doneIfErr(e) {
+			return nil
+		}
+		if call.doneIfErr(c.socket.WritePacket(b)) {
+			return nil
+		}
 		if !call.oneWay {
 			c.pending.Store(call.seq, call)
 		}
@@ -90,5 +115,5 @@ func (c *Client) OneWay(protocolID int32, args interface{}) error {
 }
 
 func (c *Client) Close() {
-
+	c.sendChannel.Stop()
 }

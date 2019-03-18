@@ -34,6 +34,10 @@ func (e *gobEncoder) encode(args interface{}) ([]byte, error) {
 
 type pbEncoder struct{}
 
+func newPbEncoder() *pbEncoder {
+	return &pbEncoder{}
+}
+
 func (e *pbEncoder) encode(args interface{}) ([]byte, error) {
 	if pb, ok := args.(proto.Message); ok {
 		return proto.Marshal(pb)
