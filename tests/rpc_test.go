@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"net/rpc"
 	"testing"
 	"time"
@@ -13,6 +14,11 @@ type RPCReq struct {
 
 func (r *RPCReq) Add(req *Req, resp *Resp) error {
 	resp.B = req.A + 1
+	return nil
+}
+
+func (r *RPCReq) Mul(ctx context.Context, args *Req, reply *Resp) error {
+	reply.B = args.A + 1
 	return nil
 }
 
