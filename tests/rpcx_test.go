@@ -23,7 +23,7 @@ func (r *RPCXReq) Mul(ctx context.Context, args *Req, reply *Resp) error {
 	return nil
 }
 
-func BenchmarkRPCX_Call(b *testing.B) {
+func Benchmark_rpcx_Call(b *testing.B) {
 	startRpcxServer()
 
 	c := client.NewClient(client.DefaultOption)
@@ -39,7 +39,7 @@ func BenchmarkRPCX_Call(b *testing.B) {
 	}
 }
 
-func BenchmarkRPCX_Go(b *testing.B) {
+func Benchmark_rpcx_Go(b *testing.B) {
 	startRpcxServer()
 
 	c := client.NewClient(client.DefaultOption)

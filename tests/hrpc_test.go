@@ -17,7 +17,7 @@ var (
 	hrpcOnce = new(sync.Once)
 )
 
-func TestHRpc(t *testing.T) {
+func Test_hrpc(t *testing.T) {
 	startHRpcServer()
 
 	client, err := hrpc.Connect("tcp", hrpcAddr)
@@ -35,7 +35,7 @@ func TestHRpc(t *testing.T) {
 	}
 }
 
-func BenchmarkHRpc_Call(b *testing.B) {
+func Benchmark_hrpc_Call(b *testing.B) {
 	startHRpcServer()
 
 	client, err := hrpc.Connect("tcp", hrpcAddr)
@@ -54,7 +54,7 @@ func BenchmarkHRpc_Call(b *testing.B) {
 	}
 }
 
-func BenchmarkHRpc_Go(b *testing.B) {
+func Benchmark_hrpc_Go(b *testing.B) {
 	startHRpcServer()
 
 	client, err := hrpc.Connect("tcp", hrpcAddr)

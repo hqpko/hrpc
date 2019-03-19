@@ -22,7 +22,7 @@ func (r *RPCReq) Add(req *Req, resp *Resp) error {
 	return nil
 }
 
-func BenchmarkRPC_Call(b *testing.B) {
+func Benchmark_go_rpc_Call(b *testing.B) {
 	startRpcServer()
 
 	s, _ := hnet.ConnectSocket("tcp", rpcAddr, hnet.NewOption())
@@ -38,7 +38,7 @@ func BenchmarkRPC_Call(b *testing.B) {
 	}
 }
 
-func BenchmarkRPC_Go(b *testing.B) {
+func Benchmark_go_rpc_Go(b *testing.B) {
 	startRpcServer()
 
 	s, _ := hnet.ConnectSocket("tcp", rpcAddr, hnet.NewOption())

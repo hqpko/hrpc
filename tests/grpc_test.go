@@ -23,7 +23,7 @@ func (s *grpcServer) SayHello(ctx context.Context, in *HelloRequest) (*HelloRepl
 	return &HelloReply{B: in.A + 1}, nil
 }
 
-func BenchmarkGRpc_Call(b *testing.B) {
+func Benchmark_grpc_Call(b *testing.B) {
 	startGRpcServer()
 
 	conn, err := grpc.Dial(grpcAddr, grpc.WithInsecure())
