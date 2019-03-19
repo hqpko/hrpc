@@ -1,6 +1,7 @@
 package hrpc
 
 import (
+	"log"
 	"sync"
 	"sync/atomic"
 
@@ -79,6 +80,7 @@ func (c *Client) read() {
 		}
 		callI, ok := c.pending.Load(seq)
 		if !ok {
+			log.Printf("no call with seq:%d", seq)
 			return
 		}
 		call := callI.(*Call)
@@ -87,36 +89,32 @@ func (c *Client) read() {
 		err = c.dec.decode(buffer.GetRestOfBytes(), call.reply)
 		if !call.doneIfErr(err) {
 			call.done <- call
+		} else {
+			log.Println(err)
 		}
 	}, func() *hbuffer.Buffer {
 		return c.readBuffer
 	})
 }
 
-//
-//func NewClientGob(socket *hnet.Socket) *Client {
-//
-//}
-//
-//func newClient(socket *hnet.Socket, enc encoder, dec decoder) *Client {
-//
-//}
-
 func (c *Client) handlerSend(i interface{}) interface{} {
 	if call, ok := i.(*Call); ok {
 		c.buffer.Reset()
-		b, e := c.enc.encode(call.args)
-		if call.doneIfErr(e) {
-			return nil
-		}
-		c.buffer.WriteInt32(call.protocolID)
-		c.buffer.WriteUint64(call.seq)
-		c.buffer.WriteBytes(b)
-		if call.doneIfErr(c.socket.WritePacket(c.buffer.GetBytes())) {
+		b, err := c.enc.encode(call.args)
+		if call.doneIfErr(err) {
+			log.Println(err)
 			return nil
 		}
 		if !call.oneWay {
 			c.pending.Store(call.seq, call)
+		}
+		c.buffer.WriteInt32(call.protocolID)
+		c.buffer.WriteUint64(call.seq)
+		c.buffer.WriteBytes(b)
+		err = c.socket.WritePacket(c.buffer.GetBytes())
+		if call.doneIfErr(err) {
+			log.Println(err)
+			return nil
 		}
 	}
 	return nil
@@ -143,6 +141,7 @@ func (c *Client) OneWay(protocolID int32, args interface{}) error {
 	return c.Go(protocolID, args, nil, true).Done().error
 }
 
-func (c *Client) Close() {
+func (c *Client) Close() error {
 	c.sendChannel.Stop()
+	return c.socket.Close()
 }

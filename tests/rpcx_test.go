@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -9,40 +10,57 @@ import (
 	"github.com/smallnest/rpcx/server"
 )
 
-func BenchmarkRPCX_Call(b *testing.B) {
-	addr := testGetAddr()
-	go func() {
-		s := server.NewServer()
-		//s.RegisterName("Arith", new(example.Arith), "")
-		_ = s.Register(new(RPCReq), "")
-		_ = s.Serve("tcp", addr)
-	}()
+var (
+	rpcxAddr = "127.0.0.1:12004"
+	rpcxOnec = new(sync.Once)
+)
 
-	time.Sleep(100 * time.Millisecond)
+type RPCXReq struct {
+}
+
+func (r *RPCXReq) Mul(ctx context.Context, args *Req, reply *Resp) error {
+	reply.B = args.A + 1
+	return nil
+}
+
+func BenchmarkRPCX_Call(b *testing.B) {
+	startRpcxServer()
 
 	c := client.NewClient(client.DefaultOption)
-	_ = c.Connect("tcp", addr)
+	if err := c.Connect("tcp", rpcxAddr); err != nil {
+		b.Fatal(err)
+	}
+	req := &Req{A: 1}
+	reply := &Resp{}
 	for i := 0; i < b.N; i++ {
-		reply := &Resp{}
-		_ = c.Call(context.Background(), "RPCReq", "Mul", &Req{A: 1}, reply)
+		if err := c.Call(context.Background(), "RPCXReq", "Mul", req, reply); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
 func BenchmarkRPCX_Go(b *testing.B) {
-	addr := testGetAddr()
-	go func() {
-		s := server.NewServer()
-		//s.RegisterName("Arith", new(example.Arith), "")
-		_ = s.Register(new(RPCReq), "")
-		_ = s.Serve("tcp", addr)
-	}()
-
-	time.Sleep(100 * time.Millisecond)
+	startRpcxServer()
 
 	c := client.NewClient(client.DefaultOption)
-	_ = c.Connect("tcp", addr)
-	for i := 0; i < b.N; i++ {
-		reply := &Resp{}
-		_ = c.Go(context.Background(), "RPCReq", "Mul", &Req{A: 1}, reply, make(chan *client.Call))
+	if err := c.Connect("tcp", rpcxAddr); err != nil {
+		b.Fatal(err)
 	}
+	req := &Req{A: 1}
+	reply := &Resp{}
+	for i := 0; i < b.N; i++ {
+		_ = c.Go(context.Background(), "RPCXReq", "Mul", req, reply, make(chan *client.Call, 1))
+	}
+}
+
+func startRpcxServer() {
+	rpcxOnec.Do(func() {
+		go func() {
+			s := server.NewServer()
+			_ = s.Register(new(RPCXReq), "")
+			_ = s.Serve("tcp", rpcxAddr)
+		}()
+
+		time.Sleep(100 * time.Millisecond)
+	})
 }

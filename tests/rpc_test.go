@@ -1,12 +1,17 @@
 package tests
 
 import (
-	"context"
 	"net/rpc"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/hqpko/hnet"
+)
+
+var (
+	rpcAddr = "127.0.0.1:12005"
+	rpcOnce = new(sync.Once)
 )
 
 type RPCReq struct {
@@ -17,49 +22,46 @@ func (r *RPCReq) Add(req *Req, resp *Resp) error {
 	return nil
 }
 
-func (r *RPCReq) Mul(ctx context.Context, args *Req, reply *Resp) error {
-	reply.B = args.A + 1
-	return nil
-}
-
 func BenchmarkRPC_Call(b *testing.B) {
-	addr := testGetAddr()
-	go func() {
-		_ = hnet.ListenSocket("tcp", addr, func(socket *hnet.Socket) {
-			server := rpc.NewServer()
-			_ = server.Register(new(RPCReq))
-			server.ServeConn(socket)
-		}, hnet.NewOption())
-	}()
+	startRpcServer()
 
-	time.Sleep(100 * time.Millisecond)
-	s, _ := hnet.ConnectSocket("tcp", addr, hnet.NewOption())
+	s, _ := hnet.ConnectSocket("tcp", rpcAddr, hnet.NewOption())
 	client := rpc.NewClient(s)
 	b.StartTimer()
 	defer b.StopTimer()
+	req := &Req{A: 1}
+	reply := &Resp{}
 	for i := 0; i < b.N; i++ {
-		resp := &Resp{}
-		_ = client.Call("RPCReq.Add", &Req{A: 1}, resp)
+		if err := client.Call("RPCReq.Add", req, reply); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
 func BenchmarkRPC_Go(b *testing.B) {
-	addr := testGetAddr()
-	go func() {
-		_ = hnet.ListenSocket("tcp", addr, func(socket *hnet.Socket) {
-			server := rpc.NewServer()
-			_ = server.Register(new(RPCReq))
-			server.ServeConn(socket)
-		}, hnet.NewOption())
-	}()
+	startRpcServer()
 
-	time.Sleep(100 * time.Millisecond)
-	s, _ := hnet.ConnectSocket("tcp", addr, hnet.NewOption())
+	s, _ := hnet.ConnectSocket("tcp", rpcAddr, hnet.NewOption())
 	client := rpc.NewClient(s)
 	b.StartTimer()
 	defer b.StopTimer()
+	req := &Req{A: 1}
+	reply := &Resp{}
 	for i := 0; i < b.N; i++ {
-		resp := &Resp{}
-		_ = client.Go("RPCReq.Add", &Req{A: 1}, resp, make(chan *rpc.Call, 1))
+		_ = client.Go("RPCReq.Add", req, reply, make(chan *rpc.Call, 1))
 	}
+}
+
+func startRpcServer() {
+	rpcOnce.Do(func() {
+		go func() {
+			_ = hnet.ListenSocket("tcp", rpcAddr, func(socket *hnet.Socket) {
+				server := rpc.NewServer()
+				_ = server.Register(new(RPCReq))
+				go server.ServeConn(socket)
+			}, hnet.NewOption())
+		}()
+
+		time.Sleep(100 * time.Millisecond)
+	})
 }
