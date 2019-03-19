@@ -2,15 +2,19 @@ package hrpc
 
 import (
 	"fmt"
+	"log"
 	"net/rpc"
 	"reflect"
 
 	"github.com/hqpko/hbuffer"
 	"github.com/hqpko/hconcurrent"
 	"github.com/hqpko/hnet"
+	"github.com/hqpko/hpool"
 )
 
-type HandlerRPC = func(args, reply interface{}) error
+var (
+	bufferPool = hpool.NewBufferPool(1024, 1024*1024)
+)
 
 type methodInfo struct {
 	method reflect.Value
@@ -50,6 +54,7 @@ func NewServerBufMsg() *Server {
 func (s *Server) handlerSend(i interface{}) interface{} {
 	if buffer, ok := i.(*hbuffer.Buffer); ok {
 		_ = s.socket.WritePacket(buffer.GetBytes())
+		bufferPool.Put(buffer)
 	}
 	return nil
 }
@@ -62,27 +67,32 @@ func (s *Server) handlerRead(i interface{}) interface{} {
 		}
 		pid, err := buffer.ReadInt32()
 		if err != nil {
+			log.Printf("read pid error:%s", err.Error())
 			break
 		}
 		oneWay, err := buffer.ReadBool()
 		if err != nil {
+			log.Printf("read oneway error:%s", err.Error())
 			break
 		}
 		var seq uint64
 		if !oneWay {
 			seq, err = buffer.ReadUint64()
 			if err != nil {
+				log.Printf("read seq error:%s", err.Error())
 				break
 			}
 		}
 		mi, ok := s.protocols[pid]
 		if !ok {
+			log.Printf("no protocol:%d", pid)
 			break
 		}
 		args := reflect.New(mi.args.Elem())
 		reply := reflect.New(mi.reply.Elem())
 		err = s.dec.decode(buffer.GetRestOfBytes(), args.Interface())
 		if err != nil {
+			log.Printf("decode request error:%s", err.Error())
 			break
 		}
 		mi.method.Call([]reflect.Value{args, reply})
@@ -122,5 +132,5 @@ func (s *Server) Listen(socket *hnet.Socket) error {
 }
 
 func (s *Server) getBuffer() *hbuffer.Buffer {
-	return hbuffer.NewBuffer()
+	return bufferPool.Get()
 }

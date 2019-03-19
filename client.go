@@ -23,6 +23,7 @@ type Call struct {
 	reply      interface{}
 	oneWay     bool
 	error      error
+	buffer     *hbuffer.Buffer
 	done       chan *Call
 }
 
@@ -51,7 +52,6 @@ type Client struct {
 	dec     decoder // gob,pb
 
 	readBuffer  *hbuffer.Buffer
-	buffer      *hbuffer.Buffer
 	socket      *hnet.Socket
 	sendChannel *hconcurrent.Concurrent
 }
@@ -73,8 +73,11 @@ func ConnectBufMsg(network, addr string) (*Client, error) {
 }
 
 func NewClient(socket *hnet.Socket) *Client {
-	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, socket: socket, readBuffer: hbuffer.NewBuffer(), buffer: hbuffer.NewBuffer(), enc: newPbEncoder(), dec: newPbDecoder()}
-	c.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerSend)
+	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, socket: socket, readBuffer: hbuffer.NewBuffer(), enc: newPbEncoder(), dec: newPbDecoder()}
+	c.sendChannel = hconcurrent.NewConcurrentWithOptions(
+		hconcurrent.NewOption(defChannelSize, defReadChannelCount, c.handlerEncode),
+		hconcurrent.NewOption(defChannelSize, 1, c.handlerSend),
+	)
 	c.sendChannel.Start()
 
 	go c.read()
@@ -82,8 +85,11 @@ func NewClient(socket *hnet.Socket) *Client {
 }
 
 func NewClientBufMeg(socket *hnet.Socket) *Client {
-	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, socket: socket, readBuffer: hbuffer.NewBuffer(), buffer: hbuffer.NewBuffer(), enc: newBufEncoder(), dec: newBufDecoder()}
-	c.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerSend)
+	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, socket: socket, readBuffer: hbuffer.NewBuffer(), enc: newBufEncoder(), dec: newBufDecoder()}
+	c.sendChannel = hconcurrent.NewConcurrentWithOptions(
+		hconcurrent.NewOption(defChannelSize, 1, c.handlerEncode),
+		hconcurrent.NewOption(defChannelSize, 1, c.handlerSend),
+	)
 	c.sendChannel.Start()
 
 	go c.read()
@@ -113,26 +119,33 @@ func (c *Client) read() {
 	})
 }
 
-func (c *Client) handlerSend(i interface{}) interface{} {
+func (c *Client) handlerEncode(i interface{}) interface{} {
 	if call, ok := i.(*Call); ok {
-		c.buffer.Reset()
 		b, err := c.enc.encode(call.args)
 		if call.doneIfErr(err) {
 			log.Println(err)
 			return nil
 		}
-		c.buffer.WriteInt32(call.protocolID)
-		c.buffer.WriteBool(call.oneWay)
+		call.buffer.WriteInt32(call.protocolID)
+		call.buffer.WriteBool(call.oneWay)
 		if !call.oneWay {
 			c.setCall(call)
-			c.buffer.WriteUint64(call.seq)
+			call.buffer.WriteUint64(call.seq)
 		}
-		c.buffer.WriteBytes(b)
-		err = c.socket.WritePacket(c.buffer.GetBytes())
+		call.buffer.WriteBytes(b)
+		return call
+	}
+	return nil
+}
+
+func (c *Client) handlerSend(i interface{}) interface{} {
+	if call, ok := i.(*Call); ok {
+		err := c.socket.WritePacket(call.buffer.GetBytes())
 		if call.doneIfErr(err) {
 			log.Println(err)
 			return nil
 		}
+		bufferPool.Put(call.buffer)
 	}
 	return nil
 }
@@ -143,6 +156,7 @@ func (c *Client) Go(protocolID int32, args, reply interface{}, oneWay bool) *Cal
 		args:       args,
 		reply:      reply,
 		oneWay:     oneWay,
+		buffer:     bufferPool.Get(),
 		done:       make(chan *Call, 1),
 	}
 	if !oneWay {
@@ -179,4 +193,8 @@ func (c *Client) getAndRemoveCall(seq uint64) (call *Call, ok bool) {
 	}
 	c.lock.Unlock()
 	return
+}
+
+func (c *Client) Seq() uint64 {
+	return atomic.LoadUint64(&c.seq)
 }

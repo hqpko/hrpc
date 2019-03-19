@@ -15,7 +15,7 @@ var (
 	hrpcOnce = new(sync.Once)
 )
 
-func Test_hrpc(t *testing.T) {
+func Test_hrpc_Call(t *testing.T) {
 	startHRpcServer()
 
 	client, err := hrpc.Connect("tcp", hrpcAddr)
