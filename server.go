@@ -55,9 +55,16 @@ func (s *Server) handlerRead(i interface{}) interface{} {
 		if err != nil {
 			break
 		}
-		seq, err := buffer.ReadUint64()
+		oneWay, err := buffer.ReadBool()
 		if err != nil {
 			break
+		}
+		var seq uint64
+		if !oneWay {
+			seq, err = buffer.ReadUint64()
+			if err != nil {
+				break
+			}
 		}
 		mi, ok := s.protocols[pid]
 		if !ok {
@@ -70,14 +77,16 @@ func (s *Server) handlerRead(i interface{}) interface{} {
 			break
 		}
 		mi.method.Call([]reflect.Value{args, reply})
-		d, err := s.enc.encode(reply.Interface())
-		if err != nil {
-			break
+		if !oneWay {
+			d, err := s.enc.encode(reply.Interface())
+			if err != nil {
+				break
+			}
+			buffer.Reset()
+			buffer.WriteUint64(seq)
+			buffer.WriteBytes(d)
+			s.sendChannel.MustInput(buffer)
 		}
-		buffer.Reset()
-		buffer.WriteUint64(seq)
-		buffer.WriteBytes(d)
-		s.sendChannel.MustInput(buffer)
 		break
 	}
 	return nil

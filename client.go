@@ -105,11 +105,12 @@ func (c *Client) handlerSend(i interface{}) interface{} {
 			log.Println(err)
 			return nil
 		}
+		c.buffer.WriteInt32(call.protocolID)
+		c.buffer.WriteBool(call.oneWay)
 		if !call.oneWay {
 			c.pending.Store(call.seq, call)
+			c.buffer.WriteUint64(call.seq)
 		}
-		c.buffer.WriteInt32(call.protocolID)
-		c.buffer.WriteUint64(call.seq)
 		c.buffer.WriteBytes(b)
 		err = c.socket.WritePacket(c.buffer.GetBytes())
 		if call.doneIfErr(err) {
@@ -122,12 +123,14 @@ func (c *Client) handlerSend(i interface{}) interface{} {
 
 func (c *Client) Go(protocolID int32, args, reply interface{}, oneWay bool) *Call {
 	call := &Call{
-		seq:        atomic.AddUint64(&c.seq, 1),
 		protocolID: protocolID,
 		args:       args,
 		reply:      reply,
 		oneWay:     oneWay,
 		done:       make(chan *Call, 1),
+	}
+	if !oneWay {
+		call.seq = atomic.AddUint64(&c.seq, 1)
 	}
 	c.sendChannel.MustInput(call)
 	return call
