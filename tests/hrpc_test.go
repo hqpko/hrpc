@@ -1,8 +1,6 @@
 package tests
 
 import (
-	"fmt"
-	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -87,10 +85,4 @@ func startHRpcServer() {
 		}()
 		time.Sleep(100 * time.Millisecond)
 	})
-}
-
-func testGetAddr() string {
-	rand.Seed(time.Now().UnixNano())
-	addr := fmt.Sprintf("127.0.0.1:%d", 10000+rand.Int31n(3000))
-	return addr
 }

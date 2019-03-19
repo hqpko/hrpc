@@ -8,7 +8,10 @@ import (
 	"github.com/hqpko/hbuffer"
 )
 
-var ErrNotPbMessage = errors.New("args is not pb.message")
+var (
+	ErrNotPbMessage  = errors.New("args is not pb.message")
+	ErrNotBufMessage = errors.New("args is not buf.message")
+)
 
 type encoder interface {
 	encode(args interface{}) ([]byte, error)
@@ -43,4 +46,20 @@ func (e *pbEncoder) encode(args interface{}) ([]byte, error) {
 		return proto.Marshal(pb)
 	}
 	return nil, ErrNotPbMessage
+}
+
+type bufEncoder struct {
+}
+
+func newBufEncoder() *bufEncoder {
+	return &bufEncoder{}
+}
+
+func (e *bufEncoder) encode(args interface{}) ([]byte, error) {
+	if pb, ok := args.(BufMessage); ok {
+		buf := hbuffer.NewBuffer()
+		pb.Marshal(buf)
+		return buf.GetBytes(), nil
+	}
+	return nil, ErrNotBufMessage
 }

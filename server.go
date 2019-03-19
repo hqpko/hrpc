@@ -38,6 +38,15 @@ func NewServer() *Server {
 	return s
 }
 
+func NewServerBufMsg() *Server {
+	s := &Server{protocols: map[int32]*methodInfo{}, enc: newBufEncoder(), dec: newBufDecoder()}
+	s.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, s.handlerSend)
+	s.sendChannel.Start()
+	s.readChannel = hconcurrent.NewConcurrent(defChannelSize, defReadChannelCount, s.handlerRead)
+	s.readChannel.Start()
+	return s
+}
+
 func (s *Server) handlerSend(i interface{}) interface{} {
 	if buffer, ok := i.(*hbuffer.Buffer); ok {
 		_ = s.socket.WritePacket(buffer.GetBytes())

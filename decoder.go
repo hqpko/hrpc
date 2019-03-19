@@ -7,6 +7,11 @@ import (
 	"github.com/hqpko/hbuffer"
 )
 
+type BufMessage interface {
+	Marshal(buffer *hbuffer.Buffer)
+	Unmarshal(buffer *hbuffer.Buffer) error
+}
+
 type decoder interface {
 	decode(data []byte, reply interface{}) error
 }
@@ -40,4 +45,20 @@ func (e *pbDecoder) decode(data []byte, reply interface{}) error {
 		return proto.Unmarshal(data, pb)
 	}
 	return ErrNotPbMessage
+}
+
+type bufDecoder struct {
+}
+
+func newBufDecoder() *bufDecoder {
+	return &bufDecoder{}
+}
+
+func (e *bufDecoder) decode(data []byte, reply interface{}) error {
+	if pb, ok := reply.(BufMessage); ok {
+		buf := hbuffer.NewBufferWithBytes(data)
+		buf.SetBytes(data)
+		return pb.Unmarshal(buf)
+	}
+	return ErrNotBufMessage
 }

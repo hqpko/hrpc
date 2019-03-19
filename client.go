@@ -63,8 +63,25 @@ func Connect(network, addr string) (*Client, error) {
 	}
 }
 
+func ConnectBufMsg(network, addr string) (*Client, error) {
+	if s, e := hnet.ConnectSocket(network, addr, hnet.NewOption()); e != nil {
+		return nil, e
+	} else {
+		return NewClientBufMeg(s), nil
+	}
+}
+
 func NewClient(socket *hnet.Socket) *Client {
 	c := &Client{pending: sync.Map{}, socket: socket, readBuffer: hbuffer.NewBuffer(), buffer: hbuffer.NewBuffer(), enc: newPbEncoder(), dec: newPbDecoder()}
+	c.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerSend)
+	c.sendChannel.Start()
+
+	go c.read()
+	return c
+}
+
+func NewClientBufMeg(socket *hnet.Socket) *Client {
+	c := &Client{pending: sync.Map{}, socket: socket, readBuffer: hbuffer.NewBuffer(), buffer: hbuffer.NewBuffer(), enc: newBufEncoder(), dec: newBufDecoder()}
 	c.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerSend)
 	c.sendChannel.Start()
 
