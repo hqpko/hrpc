@@ -45,7 +45,8 @@ func (c *Call) Error() error {
 
 type Client struct {
 	seq     uint64
-	pending sync.Map
+	lock    *sync.Mutex
+	pending map[uint64]*Call
 	enc     encoder // gob,pb
 	dec     decoder // gob,pb
 
@@ -72,7 +73,7 @@ func ConnectBufMsg(network, addr string) (*Client, error) {
 }
 
 func NewClient(socket *hnet.Socket) *Client {
-	c := &Client{pending: sync.Map{}, socket: socket, readBuffer: hbuffer.NewBuffer(), buffer: hbuffer.NewBuffer(), enc: newPbEncoder(), dec: newPbDecoder()}
+	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, socket: socket, readBuffer: hbuffer.NewBuffer(), buffer: hbuffer.NewBuffer(), enc: newPbEncoder(), dec: newPbDecoder()}
 	c.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerSend)
 	c.sendChannel.Start()
 
@@ -81,7 +82,7 @@ func NewClient(socket *hnet.Socket) *Client {
 }
 
 func NewClientBufMeg(socket *hnet.Socket) *Client {
-	c := &Client{pending: sync.Map{}, socket: socket, readBuffer: hbuffer.NewBuffer(), buffer: hbuffer.NewBuffer(), enc: newBufEncoder(), dec: newBufDecoder()}
+	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, socket: socket, readBuffer: hbuffer.NewBuffer(), buffer: hbuffer.NewBuffer(), enc: newBufEncoder(), dec: newBufDecoder()}
 	c.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerSend)
 	c.sendChannel.Start()
 
@@ -95,13 +96,11 @@ func (c *Client) read() {
 		if err != nil {
 			return
 		}
-		callI, ok := c.pending.Load(seq)
+		call, ok := c.getAndRemoveCall(seq)
 		if !ok {
 			log.Printf("no call with seq:%d", seq)
 			return
 		}
-		call := callI.(*Call)
-		c.pending.Delete(seq)
 
 		err = c.dec.decode(buffer.GetRestOfBytes(), call.reply)
 		if !call.doneIfErr(err) {
@@ -125,7 +124,7 @@ func (c *Client) handlerSend(i interface{}) interface{} {
 		c.buffer.WriteInt32(call.protocolID)
 		c.buffer.WriteBool(call.oneWay)
 		if !call.oneWay {
-			c.pending.Store(call.seq, call)
+			c.setCall(call)
 			c.buffer.WriteUint64(call.seq)
 		}
 		c.buffer.WriteBytes(b)
@@ -164,4 +163,20 @@ func (c *Client) OneWay(protocolID int32, args interface{}) error {
 func (c *Client) Close() error {
 	c.sendChannel.Stop()
 	return c.socket.Close()
+}
+
+func (c *Client) setCall(call *Call) {
+	c.lock.Lock()
+	c.pending[call.seq] = call
+	c.lock.Unlock()
+}
+
+func (c *Client) getAndRemoveCall(seq uint64) (call *Call, ok bool) {
+	c.lock.Lock()
+	call, ok = c.pending[seq]
+	if ok {
+		delete(c.pending, seq)
+	}
+	c.lock.Unlock()
+	return
 }
