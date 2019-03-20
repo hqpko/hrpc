@@ -2,6 +2,7 @@ package hrpc
 
 import (
 	"errors"
+	"reflect"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/hqpko/hpool"
@@ -11,6 +12,8 @@ const (
 	defChannelSize      = 1 << 6
 	defReadChannelCount = 1 << 4
 )
+
+var errorType = reflect.TypeOf((*error)(nil)).Elem()
 
 var (
 	bufferPool = hpool.NewBufferPool(64, 1024*16)

@@ -1,8 +1,8 @@
 package hrpc
 
 import (
-	"errors"
 	"fmt"
+	"log"
 	"reflect"
 	"sync"
 
@@ -20,6 +20,10 @@ type methodInfo struct {
 	method reflect.Value
 	args   reflect.Type
 	reply  reflect.Type
+}
+
+func (m *methodInfo) isOneWay() bool {
+	return m.reply == nil
 }
 
 type Server struct {
@@ -60,45 +64,63 @@ func (s *Server) handlerRead(i interface{}) interface{} {
 		if err != nil {
 			break
 		}
-		oneWay, err := buffer.ReadBool()
-		if err != nil {
-			break
-		}
-		var seq uint64
-		if !oneWay {
-			seq, err = buffer.ReadUint64()
-			if err != nil {
-				break
-			}
-		}
 		mi, ok := s.getMethodInfo(pid)
 		if !ok {
 			break
 		}
-		args := reflect.New(mi.args.Elem())
-		reply := reflect.New(mi.reply.Elem())
-		err = s.dec(buffer.GetRestOfBytes(), args.Interface())
-		if err != nil {
-			break
-		}
-		mi.method.Call([]reflect.Value{args, reply})
-		if !oneWay {
-			d, err := s.enc(reply.Interface())
+
+		if mi.isOneWay() {
+			args, err := s.decodeArgs(mi.args, buffer.GetRestOfBytes())
 			if err != nil {
+				log.Printf("hrpc: server decode args error:%s", err.Error())
 				break
 			}
-			buffer.Reset()
-			buffer.WriteUint64(seq)
-			buffer.WriteBytes(d)
-			s.sendChannel.MustInput(buffer)
+			mi.method.Call([]reflect.Value{args})
+			break
 		}
+
+		seq, err := buffer.ReadUint64()
+		if err != nil {
+			log.Printf("hrpc: server read seq error:%s", err.Error())
+			break
+		}
+
+		args, err := s.decodeArgs(mi.args, buffer.GetRestOfBytes())
+		if err != nil {
+			log.Printf("hrpc: server decode args error:%s", err.Error())
+			break
+		}
+		if err != nil {
+			log.Printf("hrpc: server decode args error:%s", err.Error())
+			break
+		}
+
+		reply := reflect.New(mi.reply.Elem())
+		returnValues := mi.method.Call([]reflect.Value{args, reply})
+
+		buffer.Reset()
+		buffer.WriteUint64(seq)
+		errInter := returnValues[0].Interface()
+		if errInter != nil {
+			errMsg := errInter.(error).Error()
+			buffer.WriteString(errMsg)
+		} else {
+			buffer.WriteString("") // error msg is empty
+			b, err := s.enc(reply.Interface())
+			if err != nil {
+				log.Printf("hrpc: server encode reply error:%s", err.Error())
+				break
+			}
+			buffer.WriteBytes(b)
+		}
+		s.sendChannel.MustInput(buffer)
 		break
 	}
 	return nil
 }
 
 // handler is
-// 1. func (args interface{}) error (send args only,no reply)
+// 1. func (args interface{}) (send args only,no reply)
 // 2. func (args, reply interface{}) error
 func (s *Server) Register(protocolID int32, handler interface{}) {
 	mValue := reflect.ValueOf(handler)
@@ -109,18 +131,23 @@ func (s *Server) Register(protocolID int32, handler interface{}) {
 	if mType.NumIn() < 1 {
 		panic("hrpc: server register handler num in < 1")
 	}
-	if mType.NumOut() != 1 {
-		panic("hrpc: server register handler num out != 1")
+
+	isOneWay := mType.NumIn() == 1
+	if !isOneWay { // handler will return error
+		if mType.NumOut() != 1 {
+			panic("hrpc: server register handler num out != 1")
+		}
+		outType := mType.Out(0)
+		if outType != errorType {
+			panic("hrpc: server register handler num out type is not error")
+		}
 	}
-	outType := mType.Out(0)
-	if outType.Kind() != reflect.TypeOf(errors.New("")).Kind() {
-		panic("hrpc: server register handler num out type is not error")
-	}
+
 	methodInfo := &methodInfo{
 		method: mValue,
 		args:   mType.In(0),
 	}
-	if mType.NumIn() > 1 {
+	if !isOneWay {
 		methodInfo.reply = mType.In(1)
 	}
 	if !s.setMethodInfo(protocolID, methodInfo) {
@@ -155,4 +182,9 @@ func (s *Server) Listen(socket *hnet.Socket) error {
 
 func (s *Server) getBuffer() *hbuffer.Buffer {
 	return bufferPool.Get()
+}
+
+func (s *Server) decodeArgs(argsType reflect.Type, data []byte) (reflect.Value, error) {
+	args := reflect.New(argsType.Elem())
+	return args, s.dec(data, args.Interface())
 }

@@ -1,7 +1,7 @@
 package hrpc
 
 import (
-	"log"
+	"errors"
 	"sync"
 	"sync/atomic"
 
@@ -15,21 +15,29 @@ type Call struct {
 	protocolID int32
 	args       interface{}
 	reply      interface{}
-	oneWay     bool
 	error      error
 	done       chan *Call
+}
+
+func (c *Call) isOneWay() bool {
+	return c.reply == nil
 }
 
 func (c *Call) doneIfErr(e error) bool {
 	if e != nil {
 		c.error = e
-		c.done <- c
+		if c.done != nil {
+			c.done <- c
+		}
 		return true
 	}
 	return false
 }
 
 func (c *Call) Done() *Call {
+	if c.done == nil {
+		return c
+	}
 	return <-c.done
 }
 
@@ -75,15 +83,20 @@ func (c *Client) read() {
 		}
 		call, ok := c.getAndRemoveCall(seq)
 		if !ok {
-			log.Printf("no call with seq:%d", seq)
+			return
+		}
+		errMsg, err := buffer.ReadString()
+		if err != nil {
+			return
+		}
+		if errMsg != "" {
+			call.doneIfErr(errors.New(errMsg))
 			return
 		}
 
 		err = c.dec(buffer.GetRestOfBytes(), call.reply)
 		if !call.doneIfErr(err) {
 			call.done <- call
-		} else {
-			log.Println(err)
 		}
 	}, func() *hbuffer.Buffer {
 		return c.readBuffer
@@ -95,37 +108,38 @@ func (c *Client) handlerSend(i interface{}) interface{} {
 		c.writeBuffer.Reset()
 		b, err := c.enc(call.args)
 		if call.doneIfErr(err) {
-			log.Println(err)
 			return nil
 		}
 		c.writeBuffer.WriteInt32(call.protocolID)
-		c.writeBuffer.WriteBool(call.oneWay)
-		if !call.oneWay {
+		if !call.isOneWay() {
 			c.setCall(call)
 			c.writeBuffer.WriteUint64(call.seq)
 		}
 		c.writeBuffer.WriteBytes(b)
 		err = c.socket.WritePacket(c.writeBuffer.GetBytes())
 		if call.doneIfErr(err) {
-			log.Println(err)
 			return nil
 		}
 	}
 	return nil
 }
 
-func (c *Client) Go(protocolID int32, args, reply interface{}, oneWay bool) *Call {
-	call := c.getCall(protocolID, args, reply, oneWay)
+func (c *Client) Go(protocolID int32, args interface{}, replies ...interface{}) *Call {
+	var reply interface{}
+	if len(replies) > 0 {
+		reply = replies[0]
+	}
+	call := c.getCall(protocolID, args, reply)
 	c.sendChannel.MustInput(call)
 	return call
 }
 
-func (c *Client) Call(protocolID int32, args interface{}, reply interface{}) error {
-	return c.Go(protocolID, args, reply, false).Done().error
+func (c *Client) Call(protocolID int32, args interface{}, replies ...interface{}) error {
+	return c.Go(protocolID, args, replies...).Done().error
 }
 
 func (c *Client) OneWay(protocolID int32, args interface{}) error {
-	return c.Go(protocolID, args, nil, true).Done().error
+	return c.Go(protocolID, args, nil).Done().error
 }
 
 func (c *Client) Close() error {
@@ -149,25 +163,16 @@ func (c *Client) getAndRemoveCall(seq uint64) (call *Call, ok bool) {
 	return
 }
 
-func (c *Client) getCall(protocolID int32, args, reply interface{}, oneWay bool) *Call {
+func (c *Client) getCall(protocolID int32, args, reply interface{}) *Call {
 	call := &Call{
 		protocolID: protocolID,
 		args:       args,
 		reply:      reply,
-		oneWay:     oneWay,
-		done:       make(chan *Call, 1),
 	}
-
-	// get *Call from pool
-	// call := callPool.Get().(*Call)
-	// call.protocolID = protocolID
-	// call.error = nil
-	// call.args = args
-	// call.reply = reply
-	// call.oneWay = oneWay
-
-	if !oneWay {
+	// if one way,no seq,done chan
+	if reply != nil {
 		call.seq = atomic.AddUint64(&c.seq, 1)
+		call.done = make(chan *Call, 1)
 	}
 	return call
 }
