@@ -12,12 +12,9 @@ import (
 func TestHRpc(t *testing.T) {
 	startHRpcServer()
 
+	socket, _ := hnet.ConnectSocket("tcp", hrpcAddr)
 	client := hrpc.NewClient()
-	err := client.Connect("tcp", hrpcAddr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	client.Start()
+	client.Run(socket)
 	defer client.Close()
 
 	if err := client.Call(2, &Req{A: 2}); err != nil {

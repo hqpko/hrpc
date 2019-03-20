@@ -3,7 +3,6 @@ package hrpc
 import (
 	"errors"
 	"sync"
-	"sync/atomic"
 
 	"github.com/hqpko/hbuffer"
 	"github.com/hqpko/hconcurrent"
@@ -54,7 +53,6 @@ type Client struct {
 	pending map[uint64]*Call
 	enc     HandlerEncode
 	dec     HandlerDecode
-	started bool
 
 	readBuffer  *hbuffer.Buffer
 	writeBuffer *hbuffer.Buffer
@@ -65,8 +63,6 @@ type Client struct {
 func NewClient() *Client {
 	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, readBuffer: hbuffer.NewBuffer(), writeBuffer: hbuffer.NewBuffer(), enc: handlerPbEncode, dec: handlerPbDecode}
 	c.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerSend)
-	c.sendChannel.Start()
-
 	return c
 }
 
@@ -78,27 +74,9 @@ func (c *Client) SetDecoder(dec HandlerDecode) {
 	c.dec = dec
 }
 
-func (c *Client) SetSocket(socket *hnet.Socket) {
+func (c *Client) Run(socket *hnet.Socket) {
 	c.socket = socket
-}
-
-func (c *Client) Connect(network, addr string) error {
-	if socket, err := hnet.ConnectSocket(network, addr); err != nil {
-		return err
-	} else {
-		c.socket = socket
-	}
-	return nil
-}
-
-func (c *Client) Start() {
-	c.lock.Lock()
-	if c.started {
-		c.lock.Unlock()
-		return
-	}
-	c.started = true
-	c.lock.Unlock()
+	c.sendChannel.Start()
 	go c.read()
 }
 
@@ -140,7 +118,9 @@ func (c *Client) handlerSend(i interface{}) interface{} {
 		c.writeBuffer.WriteInt32(call.protocolID)
 		isOneWay := call.isOneWay()
 		if !isOneWay {
-			c.setCall(call)
+			c.seq++
+			call.seq = c.seq
+			c.saveCall(call)
 			c.writeBuffer.WriteUint64(call.seq)
 		}
 		c.writeBuffer.WriteBytes(b)
@@ -178,7 +158,7 @@ func (c *Client) Close() error {
 	return c.socket.Close()
 }
 
-func (c *Client) setCall(call *Call) {
+func (c *Client) saveCall(call *Call) {
 	c.lock.Lock()
 	c.pending[call.seq] = call
 	c.lock.Unlock()
@@ -200,10 +180,6 @@ func (c *Client) getCall(protocolID int32, args, reply interface{}) *Call {
 		args:       args,
 		reply:      reply,
 		doneChan:   make(chan *Call, 1),
-	}
-	// if one way,no seq,done chan
-	if reply != nil {
-		call.seq = atomic.AddUint64(&c.seq, 1)
 	}
 	return call
 }
