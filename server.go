@@ -1,8 +1,10 @@
 package hrpc
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 
 	"github.com/hqpko/hbuffer"
 	"github.com/hqpko/hconcurrent"
@@ -21,6 +23,7 @@ type methodInfo struct {
 }
 
 type Server struct {
+	lock      *sync.RWMutex
 	enc       HandlerEncode
 	dec       HandlerDecode
 	socket    *hnet.Socket
@@ -31,7 +34,7 @@ type Server struct {
 }
 
 func NewServer(option Option) *Server {
-	s := &Server{protocols: map[int32]*methodInfo{}, enc: option.HandlerEncode, dec: option.HandlerDecode}
+	s := &Server{lock: new(sync.RWMutex), protocols: map[int32]*methodInfo{}, enc: option.HandlerEncode, dec: option.HandlerDecode}
 	s.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, s.handlerSend)
 	s.sendChannel.Start()
 	s.readChannel = hconcurrent.NewConcurrent(defChannelSize, defReadChannelCount, s.handlerRead)
@@ -68,7 +71,7 @@ func (s *Server) handlerRead(i interface{}) interface{} {
 				break
 			}
 		}
-		mi, ok := s.protocols[pid]
+		mi, ok := s.getMethodInfo(pid)
 		if !ok {
 			break
 		}
@@ -94,23 +97,53 @@ func (s *Server) handlerRead(i interface{}) interface{} {
 	return nil
 }
 
+// handler is
+// 1. func (args interface{}) error (send args only,no reply)
+// 2. func (args, reply interface{}) error
 func (s *Server) Register(protocolID int32, handler interface{}) {
-	if _, ok := s.protocols[protocolID]; ok {
-		panic(fmt.Sprintf("register protocol error,id exist:%d", protocolID))
-	}
 	mValue := reflect.ValueOf(handler)
 	if mValue.Kind() != reflect.Func {
 		panic("hrpc: server register handler is not method")
 	}
 	mType := reflect.TypeOf(handler)
-	if mType.NumIn() != 2 {
-		panic("hrpc: server register handler num in is not 2")
+	if mType.NumIn() < 1 {
+		panic("hrpc: server register handler num in < 1")
 	}
-	s.protocols[protocolID] = &methodInfo{
+	if mType.NumOut() != 1 {
+		panic("hrpc: server register handler num out != 1")
+	}
+	outType := mType.Out(0)
+	if outType.Kind() != reflect.TypeOf(errors.New("")).Kind() {
+		panic("hrpc: server register handler num out type is not error")
+	}
+	methodInfo := &methodInfo{
 		method: mValue,
 		args:   mType.In(0),
-		reply:  mType.In(1),
 	}
+	if mType.NumIn() > 1 {
+		methodInfo.reply = mType.In(1)
+	}
+	if !s.setMethodInfo(protocolID, methodInfo) {
+		panic(fmt.Sprintf("register protocol error,id exist:%d", protocolID))
+	}
+}
+
+func (s *Server) getMethodInfo(protocolID int32) (*methodInfo, bool) {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	methodInfo, ok := s.protocols[protocolID]
+	return methodInfo, ok
+}
+
+func (s *Server) setMethodInfo(protocolID int32, info *methodInfo) bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	_, ok := s.protocols[protocolID]
+	if ok {
+		return false
+	}
+	s.protocols[protocolID] = info
+	return true
 }
 
 func (s *Server) Listen(socket *hnet.Socket) error {
