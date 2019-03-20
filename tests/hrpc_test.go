@@ -12,10 +12,12 @@ import (
 func TestHRpc(t *testing.T) {
 	startHRpcServer()
 
-	client, err := hrpc.Connect("tcp", hrpcAddr)
+	client := hrpc.NewClient()
+	err := client.Connect("tcp", hrpcAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
+	client.Start()
 	defer client.Close()
 
 	if err := client.Call(2, &Req{A: 2}); err != nil {

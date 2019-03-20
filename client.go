@@ -51,6 +51,7 @@ type Client struct {
 	pending map[uint64]*Call
 	enc     HandlerEncode
 	dec     HandlerDecode
+	started bool
 
 	readBuffer  *hbuffer.Buffer
 	writeBuffer *hbuffer.Buffer
@@ -58,20 +59,11 @@ type Client struct {
 	sendChannel *hconcurrent.Concurrent
 }
 
-func Connect(network, addr string) (*Client, error) {
-	if s, e := hnet.ConnectSocket(network, addr); e != nil {
-		return nil, e
-	} else {
-		return NewClient(s), nil
-	}
-}
-
-func NewClient(socket *hnet.Socket) *Client {
-	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, socket: socket, readBuffer: hbuffer.NewBuffer(), writeBuffer: hbuffer.NewBuffer(), enc: handlerPbEncode, dec: handlerPbDecode}
+func NewClient() *Client {
+	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, readBuffer: hbuffer.NewBuffer(), writeBuffer: hbuffer.NewBuffer(), enc: handlerPbEncode, dec: handlerPbDecode}
 	c.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerSend)
 	c.sendChannel.Start()
 
-	go c.read()
 	return c
 }
 
@@ -81,6 +73,30 @@ func (c *Client) SetEncoder(enc HandlerEncode) {
 
 func (c *Client) SetDecoder(dec HandlerDecode) {
 	c.dec = dec
+}
+
+func (c *Client) SetSocket(socket *hnet.Socket) {
+	c.socket = socket
+}
+
+func (c *Client) Connect(network, addr string) error {
+	if socket, err := hnet.ConnectSocket(network, addr); err != nil {
+		return err
+	} else {
+		c.socket = socket
+	}
+	return nil
+}
+
+func (c *Client) Start() {
+	c.lock.Lock()
+	if c.started {
+		c.lock.Unlock()
+		return
+	}
+	c.started = true
+	c.lock.Unlock()
+	go c.read()
 }
 
 func (c *Client) read() {
