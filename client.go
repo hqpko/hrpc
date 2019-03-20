@@ -58,21 +58,29 @@ type Client struct {
 	sendChannel *hconcurrent.Concurrent
 }
 
-func Connect(network, addr string, option Option) (*Client, error) {
-	if s, e := hnet.ConnectSocket(network, addr, hnet.DefaultOption); e != nil {
+func Connect(network, addr string) (*Client, error) {
+	if s, e := hnet.ConnectSocket(network, addr); e != nil {
 		return nil, e
 	} else {
-		return NewClient(s, option), nil
+		return NewClient(s), nil
 	}
 }
 
-func NewClient(socket *hnet.Socket, option Option) *Client {
-	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, socket: socket, readBuffer: hbuffer.NewBuffer(), writeBuffer: hbuffer.NewBuffer(), enc: option.HandlerEncode, dec: option.HandlerDecode}
+func NewClient(socket *hnet.Socket) *Client {
+	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, socket: socket, readBuffer: hbuffer.NewBuffer(), writeBuffer: hbuffer.NewBuffer(), enc: handlerPbEncode, dec: handlerPbDecode}
 	c.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerSend)
 	c.sendChannel.Start()
 
 	go c.read()
 	return c
+}
+
+func (c *Client) SetEncoder(enc HandlerEncode) {
+	c.enc = enc
+}
+
+func (c *Client) SetDecoder(dec HandlerDecode) {
+	c.dec = dec
 }
 
 func (c *Client) read() {

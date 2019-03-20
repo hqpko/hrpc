@@ -12,7 +12,7 @@ import (
 func TestHRpc(t *testing.T) {
 	startHRpcServer()
 
-	client, err := hrpc.Connect("tcp", hrpcAddr, hrpc.DefaultOption)
+	client, err := hrpc.Connect("tcp", hrpcAddr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ var hrpcAddr = "127.0.0.1:12003"
 func startHRpcServer() {
 	go func() {
 		_ = hnet.ListenSocket("tcp", hrpcAddr, func(socket *hnet.Socket) {
-			s := hrpc.NewServer(hrpc.DefaultOption)
+			s := hrpc.NewServer()
 			s.Register(1, func(args *Req, reply *Resp) error {
 				reply.B = args.A + 1
 				return nil
@@ -48,7 +48,7 @@ func startHRpcServer() {
 			go func() {
 				_ = s.Listen(socket)
 			}()
-		}, hnet.DefaultOption)
+		})
 	}()
 	time.Sleep(100 * time.Millisecond)
 }

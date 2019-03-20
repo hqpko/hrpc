@@ -26,11 +26,6 @@ type (
 )
 
 var (
-	DefaultOption = Option{
-		HandlerEncode: handlerPbEncode,
-		HandlerDecode: handlerPbDecode,
-	}
-
 	ErrNotPbMessage = errors.New("args is not pb.message")
 )
 

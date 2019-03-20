@@ -11,11 +11,6 @@ import (
 	"github.com/hqpko/hnet"
 )
 
-type Option struct {
-	HandlerEncode HandlerEncode
-	HandlerDecode HandlerDecode
-}
-
 type methodInfo struct {
 	method reflect.Value
 	args   reflect.Type
@@ -37,13 +32,21 @@ type Server struct {
 	readChannel *hconcurrent.Concurrent
 }
 
-func NewServer(option Option) *Server {
-	s := &Server{lock: new(sync.RWMutex), protocols: map[int32]*methodInfo{}, enc: option.HandlerEncode, dec: option.HandlerDecode}
+func NewServer() *Server {
+	s := &Server{lock: new(sync.RWMutex), protocols: map[int32]*methodInfo{}, enc: handlerPbEncode, dec: handlerPbDecode}
 	s.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, s.handlerSend)
 	s.sendChannel.Start()
 	s.readChannel = hconcurrent.NewConcurrent(defChannelSize, defReadChannelCount, s.handlerRead)
 	s.readChannel.Start()
 	return s
+}
+
+func (s *Server) SetEncoder(enc HandlerEncode) {
+	s.enc = enc
+}
+
+func (s *Server) SetDecoder(dec HandlerDecode) {
+	s.dec = dec
 }
 
 func (s *Server) handlerSend(i interface{}) interface{} {
