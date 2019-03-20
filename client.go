@@ -59,7 +59,7 @@ type Client struct {
 }
 
 func Connect(network, addr string, option Option) (*Client, error) {
-	if s, e := hnet.ConnectSocket(network, addr, hnet.NewOption()); e != nil {
+	if s, e := hnet.ConnectSocket(network, addr, hnet.DefaultOption); e != nil {
 		return nil, e
 	} else {
 		return NewClient(s, option), nil
