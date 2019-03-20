@@ -16,7 +16,7 @@ type Call struct {
 	args       interface{}
 	reply      interface{}
 	error      error
-	done       chan *Call
+	doneChan   chan *Call
 }
 
 func (c *Call) isOneWay() bool {
@@ -26,19 +26,22 @@ func (c *Call) isOneWay() bool {
 func (c *Call) doneIfErr(e error) bool {
 	if e != nil {
 		c.error = e
-		if c.done != nil {
-			c.done <- c
-		}
+		c.done()
 		return true
 	}
 	return false
 }
 
-func (c *Call) Done() *Call {
-	if c.done == nil {
-		return c
+func (c *Call) done() {
+	select {
+	case c.doneChan <- c:
+	default:
+
 	}
-	return <-c.done
+}
+
+func (c *Call) Done() *Call {
+	return <-c.doneChan
 }
 
 func (c *Call) Error() error {
@@ -120,7 +123,7 @@ func (c *Client) read() {
 
 		err = c.dec(buffer.GetRestOfBytes(), call.reply)
 		if !call.doneIfErr(err) {
-			call.done <- call
+			call.done()
 		}
 	}, func() *hbuffer.Buffer {
 		return c.readBuffer
@@ -135,7 +138,8 @@ func (c *Client) handlerSend(i interface{}) interface{} {
 			return nil
 		}
 		c.writeBuffer.WriteInt32(call.protocolID)
-		if !call.isOneWay() {
+		isOneWay := call.isOneWay()
+		if !isOneWay {
 			c.setCall(call)
 			c.writeBuffer.WriteUint64(call.seq)
 		}
@@ -143,6 +147,9 @@ func (c *Client) handlerSend(i interface{}) interface{} {
 		err = c.socket.WritePacket(c.writeBuffer.GetBytes())
 		if call.doneIfErr(err) {
 			return nil
+		}
+		if isOneWay {
+			call.done()
 		}
 	}
 	return nil
@@ -192,11 +199,11 @@ func (c *Client) getCall(protocolID int32, args, reply interface{}) *Call {
 		protocolID: protocolID,
 		args:       args,
 		reply:      reply,
+		doneChan:   make(chan *Call, 1),
 	}
 	// if one way,no seq,done chan
 	if reply != nil {
 		call.seq = atomic.AddUint64(&c.seq, 1)
-		call.done = make(chan *Call, 1)
 	}
 	return call
 }
