@@ -48,11 +48,10 @@ func (c *Call) Error() error {
 }
 
 type Client struct {
-	seq     uint64
-	lock    *sync.Mutex
-	pending map[uint64]*Call
-	enc     HandlerEncode
-	dec     HandlerDecode
+	seq        uint64
+	lock       *sync.Mutex
+	pending    map[uint64]*Call
+	translator Translator
 
 	readBuffer  *hbuffer.Buffer
 	writeBuffer *hbuffer.Buffer
@@ -61,17 +60,14 @@ type Client struct {
 }
 
 func NewClient() *Client {
-	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, readBuffer: hbuffer.NewBuffer(), writeBuffer: hbuffer.NewBuffer(), enc: handlerPbEncode, dec: handlerPbDecode}
+	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, readBuffer: hbuffer.NewBuffer(), writeBuffer: hbuffer.NewBuffer(), translator: new(translatorProto)}
 	c.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerSend)
 	return c
 }
 
-func (c *Client) SetEncoder(enc HandlerEncode) {
-	c.enc = enc
-}
-
-func (c *Client) SetDecoder(dec HandlerDecode) {
-	c.dec = dec
+func (c *Client) SetTranslator(translator Translator) *Client {
+	c.translator = translator
+	return c
 }
 
 func (c *Client) Run(socket *hnet.Socket) {
@@ -99,7 +95,7 @@ func (c *Client) read() {
 			return
 		}
 
-		err = c.dec(buffer.GetRestOfBytes(), call.reply)
+		err = c.translator.Unmarshal(buffer.GetRestOfBytes(), call.reply)
 		if !call.doneIfErr(err) {
 			call.done()
 		}
@@ -111,7 +107,7 @@ func (c *Client) read() {
 func (c *Client) handlerSend(i interface{}) interface{} {
 	if call, ok := i.(*Call); ok {
 		c.writeBuffer.Reset()
-		b, err := c.enc(call.args)
+		b, err := c.translator.Marshal(call.args)
 		if call.doneIfErr(err) {
 			return nil
 		}

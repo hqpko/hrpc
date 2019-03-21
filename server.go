@@ -22,18 +22,17 @@ func (m *methodInfo) isOneWay() bool {
 }
 
 type Server struct {
-	lock      *sync.RWMutex
-	enc       HandlerEncode
-	dec       HandlerDecode
-	socket    *hnet.Socket
-	protocols map[int32]*methodInfo
+	lock       *sync.RWMutex
+	socket     *hnet.Socket
+	translator Translator
+	protocols  map[int32]*methodInfo
 
 	sendChannel *hconcurrent.Concurrent
 	readChannel *hconcurrent.Concurrent
 }
 
 func NewServer() *Server {
-	s := &Server{lock: new(sync.RWMutex), protocols: map[int32]*methodInfo{}, enc: handlerPbEncode, dec: handlerPbDecode}
+	s := &Server{lock: new(sync.RWMutex), protocols: map[int32]*methodInfo{}, translator: new(translatorProto)}
 	s.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, s.handlerSend)
 	s.sendChannel.Start()
 	s.readChannel = hconcurrent.NewConcurrent(defChannelSize, defReadChannelCount, s.handlerRead)
@@ -41,12 +40,9 @@ func NewServer() *Server {
 	return s
 }
 
-func (s *Server) SetEncoder(enc HandlerEncode) {
-	s.enc = enc
-}
-
-func (s *Server) SetDecoder(dec HandlerDecode) {
-	s.dec = dec
+func (s *Server) SetTranslator(translator Translator) *Server {
+	s.translator = translator
+	return s
 }
 
 func (s *Server) handlerSend(i interface{}) interface{} {
@@ -109,7 +105,7 @@ func (s *Server) handlerRead(i interface{}) interface{} {
 			buffer.WriteString(errMsg)
 		} else {
 			buffer.WriteString("") // error msg is empty
-			b, err := s.enc(reply.Interface())
+			b, err := s.translator.Marshal(reply.Interface())
 			if err != nil {
 				log.Printf("hrpc: server encode reply error:%s", err.Error())
 				break
@@ -189,5 +185,5 @@ func (s *Server) getBuffer() *hbuffer.Buffer {
 
 func (s *Server) decodeArgs(argsType reflect.Type, data []byte) (reflect.Value, error) {
 	args := reflect.New(argsType.Elem())
-	return args, s.dec(data, args.Interface())
+	return args, s.translator.Unmarshal(data, args.Interface())
 }
