@@ -15,7 +15,7 @@ type Call struct {
 	args       interface{}
 	reply      interface{}
 	error      error
-	doneChan   chan *Call
+	C          chan *Call
 }
 
 func (c *Call) isOneWay() bool {
@@ -33,14 +33,14 @@ func (c *Call) doneIfErr(e error) bool {
 
 func (c *Call) done() {
 	select {
-	case c.doneChan <- c:
+	case c.C <- c:
 	default:
 
 	}
 }
 
 func (c *Call) Done() *Call {
-	return <-c.doneChan
+	return <-c.C
 }
 
 func (c *Call) Error() error {
@@ -175,7 +175,7 @@ func (c *Client) getCall(protocolID int32, args, reply interface{}) *Call {
 		protocolID: protocolID,
 		args:       args,
 		reply:      reply,
-		doneChan:   make(chan *Call, 1),
+		C:          make(chan *Call, 1),
 	}
 	return call
 }
