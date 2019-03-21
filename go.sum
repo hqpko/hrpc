@@ -1,3 +1,5 @@
+github.com/gogo/protobuf v1.2.1 h1:/s5zKNz0uPFCZ5hddgPdo2TK2TVrUNMn0OOX8/aZMTE=
+github.com/gogo/protobuf v1.2.1/go.mod h1:hp+jE20tsWTFYpLwKvXlhS1hjn+gTNwPg2I6zVXpSg4=
 github.com/golang/protobuf v1.3.1 h1:YF8+flBXS5eO826T4nzqPrxfhQThhXl0YzfuUPu4SBg=
 github.com/golang/protobuf v1.3.1/go.mod h1:6lQm79b+lXiMfvg/cZm0SGofjICqVBUtrP5yJMmIC1U=
 github.com/gopherjs/gopherjs v0.0.0-20181017120253-0766667cb4d1 h1:EGx4pi6eqNxGaHF6qqu48+N2wcFQ5qg5FXgOdqsJ5d8=
@@ -6,12 +8,14 @@ github.com/hqpko/hbuffer v0.2.0 h1:h5xe5FeF7LMnCVj7HQ3/HAWt78Yc5sMJNQIpiRD5kSQ=
 github.com/hqpko/hbuffer v0.2.0/go.mod h1:bmBkq1tUQianD4zmdGcpHj3CGq1mErKU7/XqyJIVgJA=
 github.com/hqpko/hconcurrent v0.1.1 h1:wqex6nBaiLUFCdHzvwJklqrGFIyYulU/3vrTLlcC360=
 github.com/hqpko/hconcurrent v0.1.1/go.mod h1:wu6yicIdfMfKzUT/wSl9ZBGyL1vx9D+5kwTfmBhNv5c=
-github.com/hqpko/hnet v0.2.0 h1:i6DQb3mDeNj2bZD1m+63xDZD8jkNlivIfGies8vNs4g=
-github.com/hqpko/hnet v0.2.0/go.mod h1:ypkrz7R5b0QMpP5k52cJK2lCpK+p7OkqKLZm44UnUR8=
+github.com/hqpko/hnet v0.2.1 h1:HO99A79OJCoVYc2qi/kofwF3sXrwlUpDzZ7xcMYX4fA=
+github.com/hqpko/hnet v0.2.1/go.mod h1:ypkrz7R5b0QMpP5k52cJK2lCpK+p7OkqKLZm44UnUR8=
 github.com/hqpko/hpool v0.1.0 h1:fqjHXLo5h29N/2bBsG7hrONRgkipKjQ+J+IEw2a0+C0=
 github.com/hqpko/hpool v0.1.0/go.mod h1:iEyBDRYJH1mvDcRsg5WDAxmycSudlOI23Qx5DSfMy8o=
 github.com/jtolds/gls v4.20.0+incompatible h1:xdiiI2gbIgH/gLH7ADydsJ1uDOEzR8yvV7C0MuV77Wo=
 github.com/jtolds/gls v4.20.0+incompatible/go.mod h1:QJZ7F/aHp+rZTRtaJ1ow/lLfFfVYBRgL+9YlvaHOwJU=
+github.com/kisielk/errcheck v1.1.0/go.mod h1:EZBBE59ingxPouuu3KfxchcWSUPOHkagtvWXihfKN4Q=
+github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/klauspost/cpuid v1.2.0 h1:NMpwD2G9JSFOE1/TJjGSo5zG7Yb2bTe7eq1jH+irmeE=
 github.com/klauspost/cpuid v1.2.0/go.mod h1:Pj4uuM528wm8OyEC2QMXAi2YiTZ96dNQPGgoMS4s3ek=
 github.com/klauspost/reedsolomon v1.9.1 h1:kYrT1MlR4JH6PqOpC+okdb9CDTcwEC/BqpzK4WFyXL8=
@@ -37,3 +41,4 @@ golang.org/x/net v0.0.0-20190318221613-d196dffd7c2b h1:ZWpVMTsK0ey5WJCu+vVdfMldW
 golang.org/x/net v0.0.0-20190318221613-d196dffd7c2b/go.mod h1:t9HGtf8HONx5eT2rtn7q6eTqICYqUVnKs3thJo3Qplg=
 golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
 golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
+golang.org/x/tools v0.0.0-20180221164845-07fd8470d635/go.mod h1:n7NCudcB/nEzxVGmLbDWY5pfWTLqBcC2KZ6jyYvM4mQ=
