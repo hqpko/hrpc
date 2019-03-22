@@ -6,7 +6,6 @@ import (
 
 	fast "github.com/gogo/protobuf/proto"
 	"github.com/golang/protobuf/proto"
-	"github.com/hqpko/hpool"
 )
 
 const (
@@ -16,11 +15,6 @@ const (
 
 var errorType = reflect.TypeOf((*error)(nil)).Elem()
 var ErrNotPbMessage = errors.New("args is not pb.message")
-
-var (
-	bufferPool = hpool.NewBufferPool(64, 1024*16)
-	// callPool   = hpool.NewPool(func() interface{} { return &Call{done: make(chan *Call, 1)} }, 64)
-)
 
 type Translator interface {
 	Marshal(value interface{}) ([]byte, error)

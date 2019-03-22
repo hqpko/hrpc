@@ -9,6 +9,7 @@ import (
 	"github.com/hqpko/hbuffer"
 	"github.com/hqpko/hconcurrent"
 	"github.com/hqpko/hnet"
+	"github.com/hqpko/hpool"
 )
 
 type methodInfo struct {
@@ -26,6 +27,7 @@ type Server struct {
 	socket     *hnet.Socket
 	translator Translator
 	protocols  map[int32]*methodInfo
+	bufferPool *hpool.BufferPool
 
 	sendChannel *hconcurrent.Concurrent
 	readChannel *hconcurrent.Concurrent
@@ -45,10 +47,15 @@ func (s *Server) SetTranslator(translator Translator) *Server {
 	return s
 }
 
+func (s *Server) SetBufferPool(pool *hpool.BufferPool) *Server {
+	s.bufferPool = pool
+	return s
+}
+
 func (s *Server) handlerSend(i interface{}) interface{} {
 	if buffer, ok := i.(*hbuffer.Buffer); ok {
 		_ = s.socket.WritePacket(buffer.GetBytes())
-		bufferPool.Put(buffer)
+		s.putBuffer(buffer)
 	}
 	return nil
 }
@@ -178,7 +185,16 @@ func (s *Server) Listen(socket *hnet.Socket) error {
 }
 
 func (s *Server) getBuffer() *hbuffer.Buffer {
-	return bufferPool.Get()
+	if s.bufferPool != nil {
+		return s.bufferPool.Get()
+	}
+	return hbuffer.NewBuffer()
+}
+
+func (s *Server) putBuffer(buffer *hbuffer.Buffer) {
+	if s.bufferPool != nil {
+		s.bufferPool.Put(buffer)
+	}
 }
 
 func (s *Server) decodeArgs(argsType reflect.Type, data []byte) (reflect.Value, error) {
