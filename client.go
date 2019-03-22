@@ -7,6 +7,7 @@ import (
 	"github.com/hqpko/hbuffer"
 	"github.com/hqpko/hconcurrent"
 	"github.com/hqpko/hnet"
+	"github.com/hqpko/hpool"
 )
 
 type Call struct {
@@ -52,6 +53,7 @@ type Client struct {
 	lock       *sync.Mutex
 	pending    map[uint64]*Call
 	translator Translator
+	bufferPool *hpool.BufferPool
 
 	readBuffer  *hbuffer.Buffer
 	writeBuffer *hbuffer.Buffer
@@ -67,6 +69,11 @@ func NewClient() *Client {
 
 func (c *Client) SetTranslator(translator Translator) *Client {
 	c.translator = translator
+	return c
+}
+
+func (c *Client) SetBufferPool(pool *hpool.BufferPool) *Client {
+	c.bufferPool = pool
 	return c
 }
 
@@ -99,9 +106,7 @@ func (c *Client) read() {
 		if !call.doneIfErr(err) {
 			call.done()
 		}
-	}, func() *hbuffer.Buffer {
-		return c.readBuffer
-	})
+	}, c.getBuffer)
 }
 
 func (c *Client) handlerSend(i interface{}) interface{} {
@@ -178,4 +183,11 @@ func (c *Client) getCall(protocolID int32, args, reply interface{}) *Call {
 		C:          make(chan *Call, 1),
 	}
 	return call
+}
+
+func (c *Client) getBuffer() *hbuffer.Buffer {
+	if c.bufferPool != nil {
+		return c.bufferPool.Get()
+	}
+	return hbuffer.NewBuffer()
 }
