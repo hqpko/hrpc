@@ -61,10 +61,12 @@ func (s *Server) handlerRead(i interface{}) interface{} {
 		}
 		pid, err := buffer.ReadInt32()
 		if err != nil {
+			log.Printf("hrpc: server read pid error:%s", err.Error())
 			break
 		}
 		mi, ok := s.getMethodInfo(pid)
 		if !ok {
+			log.Printf("hrpc: server method is nil,pid:%d error:%s", pid, err.Error())
 			break
 		}
 
@@ -85,10 +87,6 @@ func (s *Server) handlerRead(i interface{}) interface{} {
 		}
 
 		args, err := s.decodeArgs(mi.args, buffer.GetRestOfBytes())
-		if err != nil {
-			log.Printf("hrpc: server decode args error:%s", err.Error())
-			break
-		}
 		if err != nil {
 			log.Printf("hrpc: server decode args error:%s", err.Error())
 			break
