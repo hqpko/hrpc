@@ -58,12 +58,12 @@ type Client struct {
 	readBuffer  *hbuffer.Buffer
 	writeBuffer *hbuffer.Buffer
 	socket      *hnet.Socket
-	sendChannel *hconcurrent.Concurrent
+	mainChannel *hconcurrent.Concurrent
 }
 
 func NewClient() *Client {
 	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, readBuffer: hbuffer.NewBuffer(), writeBuffer: hbuffer.NewBuffer(), translator: new(translatorProto)}
-	c.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerSend)
+	c.mainChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerChannel)
 	return c
 }
 
@@ -79,61 +79,71 @@ func (c *Client) SetBufferPool(pool *hpool.BufferPool) *Client {
 
 func (c *Client) Run(socket *hnet.Socket) {
 	c.socket = socket
-	c.sendChannel.Start()
+	c.mainChannel.Start()
 	go c.read()
 }
 
 func (c *Client) read() {
 	_ = c.socket.ReadBuffer(func(buffer *hbuffer.Buffer) {
-		seq, err := buffer.ReadUint64()
-		if err != nil {
-			return
-		}
-		call, ok := c.getAndRemoveCall(seq)
-		if !ok {
-			return
-		}
-		errMsg, err := buffer.ReadString()
-		if err != nil {
-			return
-		}
-		if errMsg != "" {
-			call.doneIfErr(errors.New(errMsg))
-			return
-		}
-
-		err = c.translator.Unmarshal(buffer.GetRestOfBytes(), call.reply)
-		if !call.doneIfErr(err) {
-			call.done()
-		}
+		c.mainChannel.MustInput(buffer)
 	}, c.getBuffer)
 }
 
-func (c *Client) handlerSend(i interface{}) interface{} {
+func (c *Client) handlerChannel(i interface{}) interface{} {
 	if call, ok := i.(*Call); ok {
-		c.writeBuffer.Reset()
-		b, err := c.translator.Marshal(call.args)
-		if call.doneIfErr(err) {
-			return nil
-		}
-		c.writeBuffer.WriteInt32(call.protocolID)
-		isOneWay := call.isOneWay()
-		if !isOneWay {
-			c.seq++
-			call.seq = c.seq
-			c.saveCall(call)
-			c.writeBuffer.WriteUint64(call.seq)
-		}
-		c.writeBuffer.WriteBytes(b)
-		err = c.socket.WritePacket(c.writeBuffer.GetBytes())
-		if call.doneIfErr(err) {
-			return nil
-		}
-		if isOneWay {
-			call.done()
-		}
+		c.handlerCall(call)
+	} else if buffer, ok := i.(*hbuffer.Buffer); ok {
+		c.handlerBuffer(buffer)
 	}
 	return nil
+}
+
+func (c *Client) handlerCall(call *Call) {
+	c.writeBuffer.Reset()
+	b, err := c.translator.Marshal(call.args)
+	if call.doneIfErr(err) {
+		return
+	}
+	c.writeBuffer.WriteInt32(call.protocolID)
+	isOneWay := call.isOneWay()
+	if !isOneWay {
+		c.seq++
+		call.seq = c.seq
+		c.cacheCall(call)
+		c.writeBuffer.WriteUint64(call.seq)
+	}
+	c.writeBuffer.WriteBytes(b)
+	err = c.socket.WritePacket(c.writeBuffer.GetBytes())
+	if call.doneIfErr(err) {
+		return
+	}
+	if isOneWay {
+		call.done()
+	}
+}
+
+func (c *Client) handlerBuffer(buffer *hbuffer.Buffer) {
+	seq, err := buffer.ReadUint64()
+	if err != nil {
+		return
+	}
+	call, ok := c.removeCall(seq)
+	if !ok {
+		return
+	}
+	errMsg, err := buffer.ReadString()
+	if err != nil {
+		return
+	}
+	if errMsg != "" {
+		call.doneIfErr(errors.New(errMsg))
+		return
+	}
+
+	err = c.translator.Unmarshal(buffer.GetRestOfBytes(), call.reply)
+	if !call.doneIfErr(err) {
+		call.done()
+	}
 }
 
 func (c *Client) Go(protocolID int32, args interface{}, replies ...interface{}) *Call {
@@ -141,8 +151,8 @@ func (c *Client) Go(protocolID int32, args interface{}, replies ...interface{}) 
 	if len(replies) > 0 {
 		reply = replies[0]
 	}
-	call := c.getCall(protocolID, args, reply)
-	c.sendChannel.MustInput(call)
+	call := c.newCall(protocolID, args, reply)
+	c.mainChannel.MustInput(call)
 	return call
 }
 
@@ -155,17 +165,17 @@ func (c *Client) OneWay(protocolID int32, args interface{}) error {
 }
 
 func (c *Client) Close() error {
-	c.sendChannel.Stop()
+	c.mainChannel.Stop()
 	return c.socket.Close()
 }
 
-func (c *Client) saveCall(call *Call) {
+func (c *Client) cacheCall(call *Call) {
 	c.lock.Lock()
 	c.pending[call.seq] = call
 	c.lock.Unlock()
 }
 
-func (c *Client) getAndRemoveCall(seq uint64) (call *Call, ok bool) {
+func (c *Client) removeCall(seq uint64) (call *Call, ok bool) {
 	c.lock.Lock()
 	call, ok = c.pending[seq]
 	if ok {
@@ -175,7 +185,7 @@ func (c *Client) getAndRemoveCall(seq uint64) (call *Call, ok bool) {
 	return
 }
 
-func (c *Client) getCall(protocolID int32, args, reply interface{}) *Call {
+func (c *Client) newCall(protocolID int32, args, reply interface{}) *Call {
 	call := &Call{
 		protocolID: protocolID,
 		args:       args,
