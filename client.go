@@ -89,7 +89,14 @@ func (c *Client) SetBufferPool(pool *hpool.BufferPool) *Client {
 	return c
 }
 
+// SetTimeoutOption
+// timeoutCall			: duration of rpc all timeout
+// stepDuration			: step duration of checking timeout
+// maxTimeoutDuration	: max duration of rpc all timeout
 func (c *Client) SetTimeoutOption(timeoutCall, stepDuration, maxTimeoutDuration time.Duration) *Client {
+	if maxTimeoutDuration <= timeoutCall || stepDuration >= maxTimeoutDuration {
+		panic("hrpc: client setting timeout option error")
+	}
 	c.timeoutCall = timeoutCall
 	c.timeoutStepDuration = stepDuration
 	c.timeoutMaxDuration = maxTimeoutDuration
@@ -108,7 +115,7 @@ func (c *Client) Run(socket *hnet.Socket) {
 
 	c.initTimeout()
 
-	go c.read()
+	go c.readSocket()
 }
 
 func (c *Client) initTimeout() {
@@ -129,7 +136,7 @@ func (c *Client) initTimeout() {
 	}
 }
 
-func (c *Client) read() {
+func (c *Client) readSocket() {
 	_ = c.socket.ReadBuffer(func(buffer *hbuffer.Buffer) {
 		c.mainChannel.MustInput(buffer)
 	}, c.getBuffer)
@@ -219,10 +226,6 @@ func (c *Client) Go(protocolID int32, args interface{}, replies ...interface{}) 
 
 func (c *Client) Call(protocolID int32, args interface{}, replies ...interface{}) error {
 	return c.Go(protocolID, args, replies...).Done().error
-}
-
-func (c *Client) OneWay(protocolID int32, args interface{}) error {
-	return c.Go(protocolID, args, nil).Done().error
 }
 
 func (c *Client) Close() error {
