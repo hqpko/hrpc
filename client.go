@@ -55,14 +55,13 @@ type Client struct {
 	translator Translator
 	bufferPool *hpool.BufferPool
 
-	readBuffer  *hbuffer.Buffer
 	writeBuffer *hbuffer.Buffer
 	socket      *hnet.Socket
 	mainChannel *hconcurrent.Concurrent
 }
 
 func NewClient() *Client {
-	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, readBuffer: hbuffer.NewBuffer(), writeBuffer: hbuffer.NewBuffer(), translator: new(translatorProto)}
+	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, writeBuffer: hbuffer.NewBuffer(), translator: new(translatorProto)}
 	c.mainChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerChannel)
 	return c
 }
@@ -144,6 +143,7 @@ func (c *Client) handlerBuffer(buffer *hbuffer.Buffer) {
 	if !call.doneIfErr(err) {
 		call.done()
 	}
+	c.putBuffer(buffer)
 }
 
 func (c *Client) Go(protocolID int32, args interface{}, replies ...interface{}) *Call {
@@ -200,4 +200,10 @@ func (c *Client) getBuffer() *hbuffer.Buffer {
 		return c.bufferPool.Get()
 	}
 	return hbuffer.NewBuffer()
+}
+
+func (c *Client) putBuffer(buffer *hbuffer.Buffer) {
+	if c.bufferPool != nil {
+		c.bufferPool.Put(buffer)
+	}
 }
