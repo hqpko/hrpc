@@ -3,6 +3,7 @@ package hrpc
 import (
 	"errors"
 	"reflect"
+	"time"
 
 	fast "github.com/gogo/protobuf/proto"
 	"github.com/golang/protobuf/proto"
@@ -14,7 +15,13 @@ const (
 )
 
 var errorType = reflect.TypeOf((*error)(nil)).Elem()
-var ErrNotPbMessage = errors.New("args is not pb.message")
+var ErrNotPbMessage = errors.New("hrpc: args is not pb.message")
+var ErrCallTimeout = errors.New("hrpc: call timeout")
+var (
+	defTimeoutCall         = 8 * time.Second
+	defTimeoutMaxDuration  = 16 * time.Second
+	defTimeoutStepDuration = 500 * time.Millisecond
+)
 
 type Translator interface {
 	Marshal(value interface{}) ([]byte, error)

@@ -3,20 +3,23 @@ package hrpc
 import (
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/hqpko/hbuffer"
 	"github.com/hqpko/hconcurrent"
 	"github.com/hqpko/hnet"
 	"github.com/hqpko/hpool"
+	"github.com/hqpko/hticker"
 )
 
 type Call struct {
-	seq        uint64
-	protocolID int32
-	args       interface{}
-	reply      interface{}
-	error      error
-	C          chan *Call
+	seq          uint64
+	protocolID   int32
+	args         interface{}
+	reply        interface{}
+	error        error
+	timeoutIndex int
+	C            chan *Call
 }
 
 func (c *Call) isOneWay() bool {
@@ -51,6 +54,7 @@ func (c *Call) Error() error {
 type Client struct {
 	seq        uint64
 	lock       *sync.Mutex
+	started    bool
 	pending    map[uint64]*Call
 	translator Translator
 	bufferPool *hpool.BufferPool
@@ -58,10 +62,19 @@ type Client struct {
 	writeBuffer *hbuffer.Buffer
 	socket      *hnet.Socket
 	mainChannel *hconcurrent.Concurrent
+
+	timeoutCall         time.Duration
+	timeoutMaxDuration  time.Duration
+	timeoutStepDuration time.Duration
+	timeoutSlice        []map[uint64]*Call
+	timeoutTickerGroup  *hticker.TickerGroup
+	timeoutTickID       int
+	timeoutIndex        int
+	timeoutOffset       int
 }
 
 func NewClient() *Client {
-	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, writeBuffer: hbuffer.NewBuffer(), translator: new(translatorProto)}
+	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, writeBuffer: hbuffer.NewBuffer(), translator: new(translatorProto), timeoutCall: defTimeoutCall, timeoutMaxDuration: defTimeoutMaxDuration, timeoutStepDuration: defTimeoutStepDuration}
 	c.mainChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerChannel)
 	return c
 }
@@ -76,10 +89,44 @@ func (c *Client) SetBufferPool(pool *hpool.BufferPool) *Client {
 	return c
 }
 
+func (c *Client) SetTimeoutOption(timeoutCall, stepDuration, maxTimeoutDuration time.Duration) *Client {
+	c.timeoutCall = timeoutCall
+	c.timeoutStepDuration = stepDuration
+	c.timeoutMaxDuration = maxTimeoutDuration
+	return c
+}
+
 func (c *Client) Run(socket *hnet.Socket) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if c.started {
+		return
+	}
+	c.started = true
 	c.socket = socket
 	c.mainChannel.Start()
+
+	c.initTimeout()
+
 	go c.read()
+}
+
+func (c *Client) initTimeout() {
+	stepCount := int(c.timeoutMaxDuration / c.timeoutStepDuration)
+	c.timeoutSlice = make([]map[uint64]*Call, stepCount)
+	for i := 0; i < stepCount; i++ {
+		c.timeoutSlice[i] = map[uint64]*Call{}
+	}
+
+	c.timeoutTickerGroup = hticker.NewTickerGroup(c.timeoutStepDuration)
+	c.timeoutTickID = c.timeoutTickerGroup.AddTicker(c.timeoutStepDuration, func() {
+		c.mainChannel.MustInput(struct{}{})
+	})
+
+	c.timeoutOffset = int(c.timeoutCall / c.timeoutStepDuration)
+	if c.timeoutOffset <= 0 {
+		c.timeoutOffset = 1
+	}
 }
 
 func (c *Client) read() {
@@ -93,6 +140,8 @@ func (c *Client) handlerChannel(i interface{}) interface{} {
 		c.handlerCall(call)
 	} else if buffer, ok := i.(*hbuffer.Buffer); ok {
 		c.handlerBuffer(buffer)
+	} else {
+		c.handlerTimeout()
 	}
 	return nil
 }
@@ -146,6 +195,18 @@ func (c *Client) handlerBuffer(buffer *hbuffer.Buffer) {
 	c.putBuffer(buffer)
 }
 
+func (c *Client) handlerTimeout() {
+	currentCallMap := c.timeoutSlice[c.timeoutIndex]
+	for _, call := range currentCallMap {
+		call.doneIfErr(ErrCallTimeout)
+		delete(c.pending, call.seq)
+		delete(currentCallMap, call.seq)
+	}
+
+	c.timeoutIndex++
+	c.timeoutIndex = c.timeoutIndex % len(c.timeoutSlice)
+}
+
 func (c *Client) Go(protocolID int32, args interface{}, replies ...interface{}) *Call {
 	var reply interface{}
 	if len(replies) > 0 {
@@ -165,24 +226,30 @@ func (c *Client) OneWay(protocolID int32, args interface{}) error {
 }
 
 func (c *Client) Close() error {
-	c.mainChannel.Stop()
-	return c.socket.Close()
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if c.started {
+		c.started = false
+		c.mainChannel.Stop()
+		c.timeoutTickerGroup.Stop()
+		return c.socket.Close()
+	}
+	return nil
 }
 
 func (c *Client) cacheCall(call *Call) {
-	c.lock.Lock()
 	c.pending[call.seq] = call
-	c.lock.Unlock()
+	call.timeoutIndex = (c.timeoutOffset + c.timeoutIndex) % len(c.timeoutSlice)
+	c.timeoutSlice[call.timeoutIndex][call.seq] = call
 }
 
-func (c *Client) removeCall(seq uint64) (call *Call, ok bool) {
-	c.lock.Lock()
-	call, ok = c.pending[seq]
+func (c *Client) removeCall(seq uint64) (*Call, bool) {
+	call, ok := c.pending[seq]
 	if ok {
 		delete(c.pending, seq)
+		delete(c.timeoutSlice[call.timeoutIndex], seq)
 	}
-	c.lock.Unlock()
-	return
+	return call, ok
 }
 
 func (c *Client) newCall(protocolID int32, args, reply interface{}) *Call {
