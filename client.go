@@ -137,17 +137,24 @@ func (c *Client) initTimeout() {
 }
 
 func (c *Client) readSocket() {
-	_ = c.socket.ReadBuffer(func(buffer *hbuffer.Buffer) {
+	err := c.socket.ReadBuffer(func(buffer *hbuffer.Buffer) {
 		c.mainChannel.MustInput(buffer)
 	}, c.getBuffer)
+
+	if err != nil {
+		c.mainChannel.MustInput(err)
+	}
 }
 
 func (c *Client) handlerChannel(i interface{}) interface{} {
-	if call, ok := i.(*Call); ok {
-		c.handlerCall(call)
-	} else if buffer, ok := i.(*hbuffer.Buffer); ok {
-		c.handlerBuffer(buffer)
-	} else {
+	switch v := i.(type) {
+	case *Call: // send call
+		c.handlerCall(v)
+	case *hbuffer.Buffer: // read call back
+		c.handlerBuffer(v)
+	case error: // read socket error
+		c.handlerError(v)
+	default: // check calls timeout
 		c.handlerTimeout()
 	}
 	return nil
@@ -170,6 +177,7 @@ func (c *Client) handlerCall(call *Call) {
 	c.writeBuffer.WriteBytes(b)
 	err = c.socket.WritePacket(c.writeBuffer.GetBytes())
 	if call.doneIfErr(err) {
+		c.removeCall(call.seq)
 		return
 	}
 	if isOneWay {
@@ -205,13 +213,25 @@ func (c *Client) handlerBuffer(buffer *hbuffer.Buffer) {
 func (c *Client) handlerTimeout() {
 	currentCallMap := c.timeoutSlice[c.timeoutIndex]
 	for _, call := range currentCallMap {
-		call.doneIfErr(ErrCallTimeout)
 		delete(c.pending, call.seq)
 		delete(currentCallMap, call.seq)
+		call.doneIfErr(ErrCallTimeout)
 	}
 
 	c.timeoutIndex++
 	c.timeoutIndex = c.timeoutIndex % len(c.timeoutSlice)
+}
+
+func (c *Client) handlerError(err error) {
+	if err == nil {
+		return
+	}
+	for _, call := range c.pending {
+		delete(c.pending, call.seq)
+		delete(c.timeoutSlice[call.timeoutIndex], call.seq)
+		call.doneIfErr(err)
+	}
+	_ = c.Close()
 }
 
 func (c *Client) Go(protocolID int32, args interface{}, replies ...interface{}) *Call {
