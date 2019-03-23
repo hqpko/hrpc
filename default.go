@@ -31,6 +31,10 @@ type Translator interface {
 type translatorProto struct {
 }
 
+func NewTranslatorProto() Translator {
+	return new(translatorProto)
+}
+
 func (tp *translatorProto) Marshal(value interface{}) ([]byte, error) {
 	if pb, ok := value.(proto.Message); ok {
 		return proto.Marshal(pb)
@@ -46,6 +50,10 @@ func (tp *translatorProto) Unmarshal(data []byte, reply interface{}) error {
 }
 
 type translatorFastProto struct {
+}
+
+func NewTranslatorFashProto() Translator {
+	return new(translatorFastProto)
 }
 
 func (tp *translatorFastProto) Marshal(value interface{}) ([]byte, error) {
