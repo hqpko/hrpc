@@ -162,6 +162,7 @@ func (c *Client) handlerChannel(i interface{}) interface{} {
 
 func (c *Client) handlerCall(call *Call) {
 	c.writeBuffer.Reset()
+	c.writeBuffer.WriteEndianUint32(0) // write len
 	b, err := c.translator.Marshal(call.args)
 	if call.doneIfErr(err) {
 		return
@@ -175,7 +176,9 @@ func (c *Client) handlerCall(call *Call) {
 		c.writeBuffer.WriteUint64(call.seq)
 	}
 	c.writeBuffer.WriteBytes(b)
-	err = c.socket.WritePacket(c.writeBuffer.GetBytes())
+	c.writeBuffer.SetPosition(0)
+	c.writeBuffer.WriteEndianUint32(uint32(c.writeBuffer.Len() - 4)) // rewrite final len
+	err = c.socket.WriteBuffer(c.writeBuffer)                        // socket.WriteBuffer is zero copy
 	if call.doneIfErr(err) {
 		c.removeCall(call.seq)
 		return
