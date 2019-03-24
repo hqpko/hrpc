@@ -2,6 +2,8 @@ package hrpc
 
 import (
 	"errors"
+	"fmt"
+	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,6 +23,7 @@ type Call struct {
 	error        error
 	timeoutIndex int
 	buf          *hbuffer.Buffer
+	client       *Client
 	c            chan *Call
 }
 
@@ -41,12 +44,16 @@ func (c *Call) done() {
 	select {
 	case c.c <- c:
 	default:
-
+		log.Println("hrpc: call done channel filled")
 	}
 }
 
 func (c *Call) Done() *Call {
-	return <-c.c
+	<-c.c
+	if c.buf != nil {
+		c.client.unmarshalCall(c)
+	}
+	return c
 }
 
 func (c *Call) Error() error {
@@ -181,26 +188,16 @@ func (c *Client) handlerCall(call *Call) {
 func (c *Client) handlerBuffer(buffer *hbuffer.Buffer) {
 	seq, err := buffer.ReadUint64()
 	if err != nil {
+		c.putBuffer(buffer)
 		return
 	}
 	call, ok := c.removeCall(seq)
 	if !ok {
+		c.putBuffer(buffer)
 		return
 	}
-	errMsg, err := buffer.ReadString()
-	if err != nil {
-		return
-	}
-	if errMsg != "" {
-		call.doneIfErr(errors.New(errMsg))
-		return
-	}
-
-	err = c.translator.Unmarshal(buffer.GetRestOfBytes(), call.reply)
-	if !call.doneIfErr(err) {
-		call.done()
-	}
-	c.putBuffer(buffer)
+	call.buf = buffer
+	call.done()
 }
 
 func (c *Client) handlerTimeout() {
@@ -280,6 +277,7 @@ func (c *Client) newCall(protocolID int32, args, reply interface{}) *Call {
 		reply:      reply,
 		buf:        c.getBuffer(),
 		c:          make(chan *Call, 1),
+		client:     c,
 	}
 	call.buf.WriteEndianUint32(0) // write len
 	b, err := c.translator.Marshal(call.args)
@@ -313,4 +311,19 @@ func (c *Client) putBuffer(buffer *hbuffer.Buffer) {
 func (c *Client) recoveryCallBuffer(call *Call) {
 	c.putBuffer(call.buf)
 	call.buf = nil
+}
+
+func (c *Client) unmarshalCall(call *Call) {
+	defer c.recoveryCallBuffer(call)
+	errMsg, err := call.buf.ReadString()
+	if err != nil {
+		call.error = fmt.Errorf("hrpc: read error msg error:%s", err.Error())
+		return
+	}
+	if errMsg != "" {
+		call.error = errors.New(errMsg)
+		return
+	}
+
+	call.error = c.translator.Unmarshal(call.buf.GetRestOfBytes(), call.reply)
 }
