@@ -3,6 +3,7 @@ package hrpc
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hqpko/hbuffer"
@@ -19,7 +20,8 @@ type Call struct {
 	reply        interface{}
 	error        error
 	timeoutIndex int
-	C            chan *Call
+	buf          *hbuffer.Buffer
+	c            chan *Call
 }
 
 func (c *Call) isOneWay() bool {
@@ -37,14 +39,14 @@ func (c *Call) doneIfErr(e error) bool {
 
 func (c *Call) done() {
 	select {
-	case c.C <- c:
+	case c.c <- c:
 	default:
 
 	}
 }
 
 func (c *Call) Done() *Call {
-	return <-c.C
+	return <-c.c
 }
 
 func (c *Call) Error() error {
@@ -59,7 +61,6 @@ type Client struct {
 	translator Translator
 	bufferPool *hpool.BufferPool
 
-	writeBuffer *hbuffer.Buffer
 	socket      *hnet.Socket
 	mainChannel *hconcurrent.Concurrent
 
@@ -74,7 +75,7 @@ type Client struct {
 }
 
 func NewClient() *Client {
-	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, writeBuffer: hbuffer.NewBuffer(), translator: new(translatorProto), timeoutCall: defTimeoutCall, timeoutMaxDuration: defTimeoutMaxDuration, timeoutStepDuration: defTimeoutStepDuration}
+	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, translator: new(translatorProto), timeoutCall: defTimeoutCall, timeoutMaxDuration: defTimeoutMaxDuration, timeoutStepDuration: defTimeoutStepDuration}
 	c.mainChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerChannel)
 	return c
 }
@@ -161,25 +162,14 @@ func (c *Client) handlerChannel(i interface{}) interface{} {
 }
 
 func (c *Client) handlerCall(call *Call) {
-	c.writeBuffer.Reset()
-	c.writeBuffer.WriteEndianUint32(0) // write len
-	b, err := c.translator.Marshal(call.args)
-	if call.doneIfErr(err) {
-		return
-	}
-	c.writeBuffer.WriteInt32(call.protocolID)
+	defer c.recoveryCallBuffer(call)
+
 	isOneWay := call.isOneWay()
 	if !isOneWay {
-		c.seq++
-		call.seq = c.seq
 		c.cacheCall(call)
-		c.writeBuffer.WriteUint64(call.seq)
 	}
-	c.writeBuffer.WriteBytes(b)
-	c.writeBuffer.SetPosition(0)
-	c.writeBuffer.WriteEndianUint32(uint32(c.writeBuffer.Len() - 4)) // rewrite final len
-	err = c.socket.WriteBuffer(c.writeBuffer)                        // socket.WriteBuffer is zero copy
-	if call.doneIfErr(err) {
+	err := c.socket.WriteBuffer(call.buf)
+	if call.doneIfErr(err) && !isOneWay {
 		c.removeCall(call.seq)
 		return
 	}
@@ -243,7 +233,12 @@ func (c *Client) Go(protocolID int32, args interface{}, replies ...interface{}) 
 		reply = replies[0]
 	}
 	call := c.newCall(protocolID, args, reply)
-	c.mainChannel.MustInput(call)
+	if call.error == nil {
+		c.mainChannel.MustInput(call)
+	} else {
+		c.recoveryCallBuffer(call)
+		call.done()
+	}
 	return call
 }
 
@@ -283,8 +278,22 @@ func (c *Client) newCall(protocolID int32, args, reply interface{}) *Call {
 		protocolID: protocolID,
 		args:       args,
 		reply:      reply,
-		C:          make(chan *Call, 1),
+		buf:        c.getBuffer(),
+		c:          make(chan *Call, 1),
 	}
+	call.buf.WriteEndianUint32(0) // write len
+	b, err := c.translator.Marshal(call.args)
+	if call.doneIfErr(err) {
+		return call
+	}
+	call.buf.WriteInt32(call.protocolID)
+	if !call.isOneWay() {
+		call.seq = atomic.AddUint64(&c.seq, 1)
+		call.buf.WriteUint64(call.seq)
+	}
+	call.buf.WriteBytes(b)
+	call.buf.SetPosition(0)
+	call.buf.WriteEndianUint32(uint32(call.buf.Len() - 4)) // rewrite final len
 	return call
 }
 
@@ -299,4 +308,9 @@ func (c *Client) putBuffer(buffer *hbuffer.Buffer) {
 	if c.bufferPool != nil {
 		c.bufferPool.Put(buffer)
 	}
+}
+
+func (c *Client) recoveryCallBuffer(call *Call) {
+	c.putBuffer(call.buf)
+	call.buf = nil
 }
