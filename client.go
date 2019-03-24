@@ -48,12 +48,12 @@ func (c *Call) done() {
 	}
 }
 
-func (c *Call) Done() *Call {
+func (c *Call) Done() error {
 	<-c.c
 	if c.buf != nil {
 		c.client.unmarshalCall(c)
 	}
-	return c
+	return c.error
 }
 
 func (c *Call) Error() error {
@@ -241,7 +241,7 @@ func (c *Client) Go(protocolID int32, args interface{}, replies ...interface{}) 
 }
 
 func (c *Client) Call(protocolID int32, args interface{}, replies ...interface{}) error {
-	return c.Go(protocolID, args, replies...).Done().error
+	return c.Go(protocolID, args, replies...).Done()
 }
 
 func (c *Client) Close() error {
