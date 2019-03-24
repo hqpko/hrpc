@@ -14,9 +14,9 @@ func TestHRpc(t *testing.T) {
 
 	socket, _ := hnet.ConnectSocket("tcp", hrpcAddr)
 	client := hrpc.NewClient().SetTimeoutOption(time.Second, time.Second, 10*time.Second)
-	client.Run(socket)
-	defer client.Close()
+	go client.Run(socket)
 
+	time.Sleep(100 * time.Millisecond)
 	if err := client.Call(2, &Req{A: 2}); err != nil {
 		t.Fatal(err)
 	}
@@ -33,6 +33,10 @@ func TestHRpc(t *testing.T) {
 	e = client.Call(3, &Req{A: 1}, reply)
 	if e != hrpc.ErrCallTimeout {
 		t.Error("call timeout fail")
+	}
+
+	if e = client.Close(); e != nil {
+		t.Fatal(e)
 	}
 }
 

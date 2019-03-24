@@ -111,19 +111,19 @@ func (c *Client) SetTimeoutOption(timeoutCall, stepDuration, maxTimeoutDuration 
 	return c
 }
 
-func (c *Client) Run(socket *hnet.Socket) {
+func (c *Client) Run(socket *hnet.Socket) error {
 	c.lock.Lock()
-	defer c.lock.Unlock()
 	if c.started {
-		return
+		return errors.New("hrpc: started")
 	}
 	c.started = true
 	c.socket = socket
 	c.mainChannel.Start()
 
 	c.initTimeout()
+	c.lock.Unlock()
 
-	go c.readSocket()
+	return c.readSocket()
 }
 
 func (c *Client) initTimeout() {
@@ -144,7 +144,7 @@ func (c *Client) initTimeout() {
 	}
 }
 
-func (c *Client) readSocket() {
+func (c *Client) readSocket() error {
 	err := c.socket.ReadBuffer(func(buffer *hbuffer.Buffer) {
 		c.mainChannel.MustInput(buffer)
 	}, c.getBuffer)
@@ -152,6 +152,8 @@ func (c *Client) readSocket() {
 	if err != nil {
 		c.mainChannel.MustInput(err)
 	}
+	_ = c.Close()
+	return err
 }
 
 func (c *Client) handlerChannel(i interface{}) interface{} {
@@ -221,7 +223,6 @@ func (c *Client) handlerError(err error) {
 		delete(c.timeoutSlice[call.timeoutIndex], call.seq)
 		call.doneIfErr(err)
 	}
-	_ = c.Close()
 }
 
 func (c *Client) Go(protocolID int32, args interface{}, replies ...interface{}) *Call {
