@@ -9,7 +9,7 @@ import (
 	"github.com/hqpko/hbuffer"
 	"github.com/hqpko/hconcurrent"
 	"github.com/hqpko/hnet"
-	"github.com/hqpko/hpool"
+	"github.com/hqpko/hutils"
 )
 
 type methodInfo struct {
@@ -24,17 +24,22 @@ func (m *methodInfo) isOneWay() bool {
 
 type Server struct {
 	lock       *sync.RWMutex
+	bufferPool *hutils.BufferPool
 	socket     *hnet.Socket
 	translator Translator
 	protocols  map[int32]*methodInfo
-	bufferPool *hpool.BufferPool
 
 	sendChannel *hconcurrent.Concurrent
 	readChannel *hconcurrent.Concurrent
 }
 
 func NewServer() *Server {
-	s := &Server{lock: new(sync.RWMutex), protocols: map[int32]*methodInfo{}, translator: new(translatorProto)}
+	s := &Server{
+		lock:       new(sync.RWMutex),
+		bufferPool: hutils.NewBufferPool(),
+		protocols:  map[int32]*methodInfo{},
+		translator: new(translatorProto),
+	}
 	s.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, s.handlerSend)
 	s.sendChannel.Start()
 	s.readChannel = hconcurrent.NewConcurrent(defChannelSize, defReadChannelCount, s.handlerRead)
@@ -47,15 +52,10 @@ func (s *Server) SetTranslator(translator Translator) *Server {
 	return s
 }
 
-func (s *Server) SetBufferPool(pool *hpool.BufferPool) *Server {
-	s.bufferPool = pool
-	return s
-}
-
 func (s *Server) handlerSend(i interface{}) interface{} {
 	if buffer, ok := i.(*hbuffer.Buffer); ok {
 		_ = s.socket.WritePacket(buffer.GetBytes())
-		s.putBuffer(buffer)
+		s.bufferPool.Put(buffer)
 	}
 	return nil
 }
@@ -181,20 +181,7 @@ func (s *Server) Listen(socket *hnet.Socket) error {
 	s.socket = socket
 	return socket.ReadBuffer(func(buffer *hbuffer.Buffer) {
 		s.readChannel.MustInput(buffer)
-	}, s.getBuffer)
-}
-
-func (s *Server) getBuffer() *hbuffer.Buffer {
-	if s.bufferPool != nil {
-		return s.bufferPool.Get()
-	}
-	return hbuffer.NewBuffer()
-}
-
-func (s *Server) putBuffer(buffer *hbuffer.Buffer) {
-	if s.bufferPool != nil {
-		s.bufferPool.Put(buffer)
-	}
+	}, s.bufferPool.Get)
 }
 
 func (s *Server) decodeArgs(argsType reflect.Type, data []byte) (reflect.Value, error) {

@@ -11,8 +11,8 @@ import (
 	"github.com/hqpko/hbuffer"
 	"github.com/hqpko/hconcurrent"
 	"github.com/hqpko/hnet"
-	"github.com/hqpko/hpool"
 	"github.com/hqpko/hticker"
+	"github.com/hqpko/hutils"
 )
 
 type Call struct {
@@ -61,13 +61,13 @@ func (c *Call) Error() error {
 }
 
 type Client struct {
-	seq        uint64
 	lock       *sync.Mutex
-	started    bool
-	pending    map[uint64]*Call
-	translator Translator
-	bufferPool *hpool.BufferPool
+	bufferPool *hutils.BufferPool
 
+	seq         uint64
+	started     bool
+	pending     map[uint64]*Call
+	translator  Translator
 	socket      *hnet.Socket
 	mainChannel *hconcurrent.Concurrent
 
@@ -82,18 +82,21 @@ type Client struct {
 }
 
 func NewClient() *Client {
-	c := &Client{lock: new(sync.Mutex), pending: map[uint64]*Call{}, translator: new(translatorProto), timeoutCall: defTimeoutCall, timeoutMaxDuration: defTimeoutMaxDuration, timeoutStepDuration: defTimeoutStepDuration}
+	c := &Client{
+		lock:                new(sync.Mutex),
+		bufferPool:          hutils.NewBufferPool(),
+		pending:             map[uint64]*Call{},
+		translator:          new(translatorProto),
+		timeoutCall:         defTimeoutCall,
+		timeoutMaxDuration:  defTimeoutMaxDuration,
+		timeoutStepDuration: defTimeoutStepDuration,
+	}
 	c.mainChannel = hconcurrent.NewConcurrent(defChannelSize, 1, c.handlerChannel)
 	return c
 }
 
 func (c *Client) SetTranslator(translator Translator) *Client {
 	c.translator = translator
-	return c
-}
-
-func (c *Client) SetBufferPool(pool *hpool.BufferPool) *Client {
-	c.bufferPool = pool
 	return c
 }
 
@@ -147,7 +150,7 @@ func (c *Client) initTimeout() {
 func (c *Client) readSocket() error {
 	err := c.socket.ReadBuffer(func(buffer *hbuffer.Buffer) {
 		c.mainChannel.MustInput(buffer)
-	}, c.getBuffer)
+	}, c.bufferPool.Get)
 
 	if err != nil {
 		c.mainChannel.MustInput(err)
@@ -190,12 +193,12 @@ func (c *Client) handlerCall(call *Call) {
 func (c *Client) handlerBuffer(buffer *hbuffer.Buffer) {
 	seq, err := buffer.ReadUint64()
 	if err != nil {
-		c.putBuffer(buffer)
+		c.bufferPool.Put(buffer)
 		return
 	}
 	call, ok := c.removeCall(seq)
 	if !ok {
-		c.putBuffer(buffer)
+		c.bufferPool.Put(buffer)
 		return
 	}
 	call.buf = buffer
@@ -276,7 +279,7 @@ func (c *Client) newCall(protocolID int32, args, reply interface{}) *Call {
 		protocolID: protocolID,
 		args:       args,
 		reply:      reply,
-		buf:        c.getBuffer(),
+		buf:        c.bufferPool.Get(),
 		c:          make(chan *Call, 1),
 		client:     c,
 	}
@@ -296,21 +299,8 @@ func (c *Client) newCall(protocolID int32, args, reply interface{}) *Call {
 	return call
 }
 
-func (c *Client) getBuffer() *hbuffer.Buffer {
-	if c.bufferPool != nil {
-		return c.bufferPool.Get()
-	}
-	return hbuffer.NewBuffer()
-}
-
-func (c *Client) putBuffer(buffer *hbuffer.Buffer) {
-	if c.bufferPool != nil {
-		c.bufferPool.Put(buffer)
-	}
-}
-
 func (c *Client) recoveryCallBuffer(call *Call) {
-	c.putBuffer(call.buf)
+	c.bufferPool.Put(call.buf)
 	call.buf = nil
 }
 
