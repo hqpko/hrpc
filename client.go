@@ -238,7 +238,6 @@ func (c *Client) Go(protocolID int32, args interface{}, replies ...interface{}) 
 		c.mainChannel.MustInput(call)
 	} else {
 		c.recoveryCallBuffer(call)
-		call.done()
 	}
 	return call
 }
