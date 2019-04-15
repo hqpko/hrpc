@@ -7,6 +7,7 @@ import (
 
 	fast "github.com/gogo/protobuf/proto"
 	"github.com/golang/protobuf/proto"
+	"github.com/hqpko/hbuffer"
 )
 
 const (
@@ -24,48 +25,56 @@ var (
 )
 
 type Translator interface {
-	Marshal(value interface{}) ([]byte, error)
-	Unmarshal(data []byte, value interface{}) error
+	Marshal(value interface{}, writeBuffer *hbuffer.Buffer) error
+	Unmarshal(readBuffer *hbuffer.Buffer, value interface{}) error
 }
 
-type translatorProto struct {
-}
+type translatorProto struct{}
 
 func NewTranslatorProto() Translator {
 	return new(translatorProto)
 }
 
-func (tp *translatorProto) Marshal(value interface{}) ([]byte, error) {
+func (tp *translatorProto) Marshal(value interface{}, writeBuffer *hbuffer.Buffer) error {
 	if pb, ok := value.(proto.Message); ok {
-		return proto.Marshal(pb)
-	}
-	return nil, ErrNotPbMessage
-}
-
-func (tp *translatorProto) Unmarshal(data []byte, reply interface{}) error {
-	if pb, ok := reply.(proto.Message); ok {
-		return proto.Unmarshal(data, pb)
+		if bs, err := proto.Marshal(pb); err != nil {
+			return err
+		} else {
+			writeBuffer.WriteBytes(bs)
+			return nil
+		}
 	}
 	return ErrNotPbMessage
 }
 
-type translatorFastProto struct {
+func (tp *translatorProto) Unmarshal(readBuffer *hbuffer.Buffer, value interface{}) error {
+	if pb, ok := value.(proto.Message); ok {
+		return proto.Unmarshal(readBuffer.GetRestOfBytes(), pb)
+	}
+	return ErrNotPbMessage
 }
+
+type translatorFastProto struct{}
 
 func NewTranslatorFashProto() Translator {
 	return new(translatorFastProto)
 }
 
-func (tp *translatorFastProto) Marshal(value interface{}) ([]byte, error) {
+func (tp *translatorFastProto) Marshal(value interface{}, writeBuffer *hbuffer.Buffer) error {
 	if pb, ok := value.(proto.Message); ok {
-		return fast.Marshal(pb)
+		if bs, err := fast.Marshal(pb); err != nil {
+			return err
+		} else {
+			writeBuffer.WriteBytes(bs)
+			return nil
+		}
 	}
-	return nil, ErrNotPbMessage
+	return ErrNotPbMessage
 }
 
-func (tp *translatorFastProto) Unmarshal(data []byte, reply interface{}) error {
-	if pb, ok := reply.(proto.Message); ok {
-		return fast.Unmarshal(data, pb)
+func (tp *translatorFastProto) Unmarshal(readBuffer *hbuffer.Buffer, value interface{}) error {
+	if pb, ok := value.(proto.Message); ok {
+		return fast.Unmarshal(readBuffer.GetRestOfBytes(), pb)
 	}
 	return ErrNotPbMessage
 }

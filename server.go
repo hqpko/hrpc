@@ -78,7 +78,7 @@ func (s *Server) handlerRead(i interface{}) interface{} {
 		}
 
 		if mi.isOneWay() {
-			args, err := s.decodeArgs(mi.args, buffer.GetRestOfBytes())
+			args, err := s.decodeArgs(mi.args, buffer)
 			if err != nil {
 				log.Printf("hrpc: server decode args error:%s", err.Error())
 				break
@@ -93,7 +93,7 @@ func (s *Server) handlerRead(i interface{}) interface{} {
 			break
 		}
 
-		args, err := s.decodeArgs(mi.args, buffer.GetRestOfBytes())
+		args, err := s.decodeArgs(mi.args, buffer)
 		if err != nil {
 			log.Printf("hrpc: server decode args error:%s", err.Error())
 			break
@@ -110,12 +110,11 @@ func (s *Server) handlerRead(i interface{}) interface{} {
 			buffer.WriteString(errMsg)
 		} else {
 			buffer.WriteString("") // error msg is empty
-			b, err := s.translator.Marshal(reply.Interface())
+			err := s.translator.Marshal(reply.Interface(), buffer)
 			if err != nil {
 				log.Printf("hrpc: server encode reply error:%s", err.Error())
 				break
 			}
-			buffer.WriteBytes(b)
 		}
 		s.sendChannel.MustInput(buffer)
 		break
@@ -184,7 +183,7 @@ func (s *Server) Listen(socket *hnet.Socket) error {
 	}, s.bufferPool.Get)
 }
 
-func (s *Server) decodeArgs(argsType reflect.Type, data []byte) (reflect.Value, error) {
+func (s *Server) decodeArgs(argsType reflect.Type, argsBuffer *hbuffer.Buffer) (reflect.Value, error) {
 	args := reflect.New(argsType.Elem())
-	return args, s.translator.Unmarshal(data, args.Interface())
+	return args, s.translator.Unmarshal(argsBuffer, args.Interface())
 }

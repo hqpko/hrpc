@@ -283,16 +283,15 @@ func (c *Client) newCall(protocolID int32, args, reply interface{}) *Call {
 		client:     c,
 	}
 	call.buf.WriteEndianUint32(0) // write len
-	b, err := c.translator.Marshal(call.args)
-	if call.doneIfErr(err) {
-		return call
-	}
 	call.buf.WriteInt32(call.protocolID)
 	if !call.isOneWay() {
 		call.seq = atomic.AddUint64(&c.seq, 1)
 		call.buf.WriteUint64(call.seq)
 	}
-	call.buf.WriteBytes(b)
+	err := c.translator.Marshal(call.args, call.buf)
+	if call.doneIfErr(err) {
+		return call
+	}
 	call.buf.SetPosition(0)
 	call.buf.WriteEndianUint32(uint32(call.buf.Len() - 4)) // rewrite final len
 	return call
@@ -315,5 +314,5 @@ func (c *Client) unmarshalCall(call *Call) {
 		return
 	}
 
-	call.error = c.translator.Unmarshal(call.buf.GetRestOfBytes(), call.reply)
+	call.error = c.translator.Unmarshal(call.buf, call.reply)
 }
