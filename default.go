@@ -15,10 +15,14 @@ const (
 	defReadChannelCount = 1 << 4
 )
 
-var errorType = reflect.TypeOf((*error)(nil)).Elem()
-var ErrNotPbMessage = errors.New("hrpc: args is not pb.message")
-var ErrCallTimeout = errors.New("hrpc: call timeout")
 var (
+	errorType       = reflect.TypeOf((*error)(nil)).Elem()
+	ErrNotPbMessage = errors.New("hrpc: value is not pb.message")
+	ErrCallTimeout  = errors.New("hrpc: call timeout")
+	ErrNotMarshal   = errors.New("hrpc: value is not marshal")
+)
+
+const (
 	defTimeoutCall         = 8 * time.Second
 	defTimeoutMaxDuration  = 16 * time.Second
 	defTimeoutStepDuration = 500 * time.Millisecond
@@ -77,4 +81,29 @@ func (tp *translatorFastProto) Unmarshal(readBuffer *hbuffer.Buffer, value inter
 		return fast.Unmarshal(readBuffer.GetRestOfBytes(), pb)
 	}
 	return ErrNotPbMessage
+}
+
+type marshaler interface {
+	Marshal(writeBuffer *hbuffer.Buffer) error
+	Unmarshal(readBuffer *hbuffer.Buffer) error
+}
+
+type translatorMarshaler struct{}
+
+func NewTranslatorMarshaler() Translator {
+	return new(translatorMarshaler)
+}
+
+func (tm *translatorMarshaler) Marshal(value interface{}, writeBuffer *hbuffer.Buffer) error {
+	if m, ok := value.(marshaler); ok {
+		return m.Marshal(writeBuffer)
+	}
+	return ErrNotMarshal
+}
+
+func (tm *translatorMarshaler) Unmarshal(readBuffer *hbuffer.Buffer, value interface{}) error {
+	if m, ok := value.(marshaler); ok {
+		return m.Unmarshal(readBuffer)
+	}
+	return ErrNotMarshal
 }
