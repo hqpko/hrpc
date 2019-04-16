@@ -114,10 +114,10 @@ func (c *Client) SetTimeoutOption(timeoutCall, stepDuration, maxTimeoutDuration 
 	return c
 }
 
-func (c *Client) Run(socket *hnet.Socket) error {
+func (c *Client) Run(socket *hnet.Socket) {
 	c.lock.Lock()
 	if c.started {
-		return errors.New("hrpc: started")
+		panic("hrpc: started")
 	}
 	c.started = true
 	c.socket = socket
@@ -125,8 +125,6 @@ func (c *Client) Run(socket *hnet.Socket) error {
 
 	c.initTimeout()
 	c.lock.Unlock()
-
-	return c.readSocket()
 }
 
 func (c *Client) initTimeout() {
@@ -145,18 +143,6 @@ func (c *Client) initTimeout() {
 	if c.timeoutOffset <= 0 {
 		c.timeoutOffset = 1
 	}
-}
-
-func (c *Client) readSocket() error {
-	err := c.socket.ReadBuffer(func(buffer *hbuffer.Buffer) {
-		c.mainChannel.MustInput(buffer)
-	}, c.bufferPool.Get)
-
-	if err != nil {
-		c.mainChannel.MustInput(err)
-	}
-	_ = c.Close()
-	return err
 }
 
 func (c *Client) handlerChannel(i interface{}) interface{} {
@@ -283,6 +269,7 @@ func (c *Client) newCall(protocolID int32, args, reply interface{}) *Call {
 		client:     c,
 	}
 	call.buf.WriteEndianUint32(0) // write len
+	call.buf.WriteByte(callTypeRequest)
 	call.buf.WriteInt32(call.protocolID)
 	if !call.isOneWay() {
 		call.seq = atomic.AddUint64(&c.seq, 1)

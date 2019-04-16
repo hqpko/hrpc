@@ -11,6 +11,9 @@ import (
 )
 
 const (
+	callTypeRequest  = 0x01
+	callTypeResponse = 0x02
+
 	defChannelSize      = 1 << 6
 	defReadChannelCount = 1 << 4
 )

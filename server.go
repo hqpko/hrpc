@@ -54,7 +54,7 @@ func (s *Server) SetTranslator(translator Translator) *Server {
 
 func (s *Server) handlerSend(i interface{}) interface{} {
 	if buffer, ok := i.(*hbuffer.Buffer); ok {
-		_ = s.socket.WritePacket(buffer.GetBytes())
+		_ = s.socket.WriteBuffer(buffer)
 		s.bufferPool.Put(buffer)
 	}
 	return nil
@@ -103,6 +103,8 @@ func (s *Server) handlerRead(i interface{}) interface{} {
 		returnValues := mi.method.Call([]reflect.Value{args, reply})
 
 		buffer.Reset()
+		buffer.WriteEndianUint32(0)
+		buffer.WriteByte(callTypeResponse)
 		buffer.WriteUint64(seq)
 		errInter := returnValues[0].Interface()
 		if errInter != nil {
@@ -116,6 +118,8 @@ func (s *Server) handlerRead(i interface{}) interface{} {
 				break
 			}
 		}
+		buffer.SetPosition(0)
+		buffer.WriteEndianUint32(uint32(buffer.Len() - 4))
 		s.sendChannel.MustInput(buffer)
 		break
 	}
@@ -176,11 +180,8 @@ func (s *Server) setMethodInfo(protocolID int32, info *methodInfo) bool {
 	return true
 }
 
-func (s *Server) Listen(socket *hnet.Socket) error {
+func (s *Server) Listen(socket *hnet.Socket) {
 	s.socket = socket
-	return socket.ReadBuffer(func(buffer *hbuffer.Buffer) {
-		s.readChannel.MustInput(buffer)
-	}, s.bufferPool.Get)
 }
 
 func (s *Server) decodeArgs(argsType reflect.Type, argsBuffer *hbuffer.Buffer) (reflect.Value, error) {
