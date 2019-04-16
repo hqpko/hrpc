@@ -10,23 +10,27 @@ import (
 
 type Stream struct {
 	bufferPool *hutils.BufferPool
-	client     *Client
-	server     *Server
-	translator Translator
+	client     *client
+	server     *server
 }
 
 func NewStream() *Stream {
-	return &Stream{bufferPool: hutils.NewBufferPool(), translator: NewTranslatorProto(), client: NewClient(), server: NewServer()}
+	bufferPool := hutils.NewBufferPool()
+	s := &Stream{bufferPool: bufferPool, client: newClient(bufferPool), server: newServer(bufferPool)}
+	trans := NewTranslatorProto()
+	s.client.setTranslator(trans)
+	s.server.setTranslator(trans)
+	return s
 }
 
 func (s *Stream) SetTranslator(trans Translator) *Stream {
-	s.client.SetTranslator(trans)
-	s.server.SetTranslator(trans)
+	s.client.setTranslator(trans)
+	s.server.setTranslator(trans)
 	return s
 }
 
 func (s *Stream) SetTimeoutOption(timeoutCall, stepDuration, maxTimeoutDuration time.Duration) *Stream {
-	s.client.SetTimeoutOption(timeoutCall, stepDuration, maxTimeoutDuration)
+	s.client.setTimeoutOption(timeoutCall, stepDuration, maxTimeoutDuration)
 	return s
 }
 
@@ -35,16 +39,16 @@ func (s *Stream) Call(pid int32, arg interface{}, reply ...interface{}) error {
 }
 
 func (s *Stream) Go(pid int32, arg interface{}, reply ...interface{}) *Call {
-	return s.client.Go(pid, arg, reply...)
+	return s.client.call(pid, arg, reply...)
 }
 
 func (s *Stream) Register(pid int32, handler interface{}) {
-	s.server.Register(pid, handler)
+	s.server.register(pid, handler)
 }
 
 func (s *Stream) Run(socket *hnet.Socket) error {
-	s.client.Run(socket)
-	s.server.Listen(socket)
+	s.client.run(socket)
+	s.server.run(socket)
 	err := socket.ReadBuffer(func(buffer *hbuffer.Buffer) {
 		callType, _ := buffer.ReadByte()
 		if callType == callTypeRequest {
@@ -57,10 +61,10 @@ func (s *Stream) Run(socket *hnet.Socket) error {
 	if err != nil {
 		s.client.mainChannel.MustInput(err)
 	}
-	_ = s.Close()
 	return err
 }
 
 func (s *Stream) Close() error {
-	return s.client.Close()
+	s.server.close()
+	return s.client.close()
 }

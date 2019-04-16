@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -23,7 +22,7 @@ type Call struct {
 	error        error
 	timeoutIndex int
 	buf          *hbuffer.Buffer
-	client       *Client
+	client       *client
 	c            chan *Call
 }
 
@@ -60,12 +59,10 @@ func (c *Call) Error() error {
 	return c.error
 }
 
-type Client struct {
-	lock       *sync.Mutex
+type client struct {
 	bufferPool *hutils.BufferPool
 
 	seq         uint64
-	started     bool
 	pending     map[uint64]*Call
 	translator  Translator
 	socket      *hnet.Socket
@@ -81,12 +78,10 @@ type Client struct {
 	timeoutOffset       int
 }
 
-func NewClient() *Client {
-	c := &Client{
-		lock:                new(sync.Mutex),
-		bufferPool:          hutils.NewBufferPool(),
+func newClient(bufferPool *hutils.BufferPool) *client {
+	c := &client{
+		bufferPool:          bufferPool,
 		pending:             map[uint64]*Call{},
-		translator:          new(translatorProto),
 		timeoutCall:         defTimeoutCall,
 		timeoutMaxDuration:  defTimeoutMaxDuration,
 		timeoutStepDuration: defTimeoutStepDuration,
@@ -95,7 +90,7 @@ func NewClient() *Client {
 	return c
 }
 
-func (c *Client) SetTranslator(translator Translator) *Client {
+func (c *client) setTranslator(translator Translator) *client {
 	c.translator = translator
 	return c
 }
@@ -104,7 +99,7 @@ func (c *Client) SetTranslator(translator Translator) *Client {
 // timeoutCall			: duration of rpc all timeout
 // stepDuration			: step duration of checking timeout
 // maxTimeoutDuration	: max duration of rpc all timeout
-func (c *Client) SetTimeoutOption(timeoutCall, stepDuration, maxTimeoutDuration time.Duration) *Client {
+func (c *client) setTimeoutOption(timeoutCall, stepDuration, maxTimeoutDuration time.Duration) *client {
 	if maxTimeoutDuration <= timeoutCall || stepDuration >= maxTimeoutDuration {
 		panic("hrpc: client setting timeout option error")
 	}
@@ -114,20 +109,13 @@ func (c *Client) SetTimeoutOption(timeoutCall, stepDuration, maxTimeoutDuration 
 	return c
 }
 
-func (c *Client) Run(socket *hnet.Socket) {
-	c.lock.Lock()
-	if c.started {
-		panic("hrpc: started")
-	}
-	c.started = true
+func (c *client) run(socket *hnet.Socket) {
 	c.socket = socket
-	c.mainChannel.Start()
-
 	c.initTimeout()
-	c.lock.Unlock()
+	c.mainChannel.Start()
 }
 
-func (c *Client) initTimeout() {
+func (c *client) initTimeout() {
 	stepCount := int(c.timeoutMaxDuration / c.timeoutStepDuration)
 	c.timeoutSlice = make([]map[uint64]*Call, stepCount)
 	for i := 0; i < stepCount; i++ {
@@ -145,7 +133,7 @@ func (c *Client) initTimeout() {
 	}
 }
 
-func (c *Client) handlerChannel(i interface{}) interface{} {
+func (c *client) handlerChannel(i interface{}) interface{} {
 	switch v := i.(type) {
 	case *Call: // send call
 		c.handlerCall(v)
@@ -159,7 +147,7 @@ func (c *Client) handlerChannel(i interface{}) interface{} {
 	return nil
 }
 
-func (c *Client) handlerCall(call *Call) {
+func (c *client) handlerCall(call *Call) {
 	defer c.recoveryCallBuffer(call)
 
 	isOneWay := call.isOneWay()
@@ -176,7 +164,7 @@ func (c *Client) handlerCall(call *Call) {
 	}
 }
 
-func (c *Client) handlerBuffer(buffer *hbuffer.Buffer) {
+func (c *client) handlerBuffer(buffer *hbuffer.Buffer) {
 	seq, err := buffer.ReadUint64()
 	if err != nil {
 		c.bufferPool.Put(buffer)
@@ -191,7 +179,7 @@ func (c *Client) handlerBuffer(buffer *hbuffer.Buffer) {
 	call.done()
 }
 
-func (c *Client) handlerTimeout() {
+func (c *client) handlerTimeout() {
 	currentCallMap := c.timeoutSlice[c.timeoutIndex]
 	for _, call := range currentCallMap {
 		delete(c.pending, call.seq)
@@ -203,7 +191,7 @@ func (c *Client) handlerTimeout() {
 	c.timeoutIndex = c.timeoutIndex % len(c.timeoutSlice)
 }
 
-func (c *Client) handlerError(err error) {
+func (c *client) handlerError(err error) {
 	if err == nil {
 		return
 	}
@@ -214,7 +202,7 @@ func (c *Client) handlerError(err error) {
 	}
 }
 
-func (c *Client) Go(protocolID int32, args interface{}, replies ...interface{}) *Call {
+func (c *client) call(protocolID int32, args interface{}, replies ...interface{}) *Call {
 	var reply interface{}
 	if len(replies) > 0 {
 		reply = replies[0]
@@ -228,29 +216,19 @@ func (c *Client) Go(protocolID int32, args interface{}, replies ...interface{}) 
 	return call
 }
 
-func (c *Client) Call(protocolID int32, args interface{}, replies ...interface{}) error {
-	return c.Go(protocolID, args, replies...).Done()
+func (c *client) close() error {
+	c.mainChannel.Stop()
+	c.timeoutTickerGroup.Stop()
+	return c.socket.Close()
 }
 
-func (c *Client) Close() error {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	if c.started {
-		c.started = false
-		c.mainChannel.Stop()
-		c.timeoutTickerGroup.Stop()
-		return c.socket.Close()
-	}
-	return nil
-}
-
-func (c *Client) cacheCall(call *Call) {
+func (c *client) cacheCall(call *Call) {
 	c.pending[call.seq] = call
 	call.timeoutIndex = (c.timeoutOffset + c.timeoutIndex) % len(c.timeoutSlice)
 	c.timeoutSlice[call.timeoutIndex][call.seq] = call
 }
 
-func (c *Client) removeCall(seq uint64) (*Call, bool) {
+func (c *client) removeCall(seq uint64) (*Call, bool) {
 	call, ok := c.pending[seq]
 	if ok {
 		delete(c.pending, seq)
@@ -259,7 +237,7 @@ func (c *Client) removeCall(seq uint64) (*Call, bool) {
 	return call, ok
 }
 
-func (c *Client) newCall(protocolID int32, args, reply interface{}) *Call {
+func (c *client) newCall(protocolID int32, args, reply interface{}) *Call {
 	call := &Call{
 		protocolID: protocolID,
 		args:       args,
@@ -284,12 +262,12 @@ func (c *Client) newCall(protocolID int32, args, reply interface{}) *Call {
 	return call
 }
 
-func (c *Client) recoveryCallBuffer(call *Call) {
+func (c *client) recoveryCallBuffer(call *Call) {
 	c.bufferPool.Put(call.buf)
 	call.buf = nil
 }
 
-func (c *Client) unmarshalCall(call *Call) {
+func (c *client) unmarshalCall(call *Call) {
 	defer c.recoveryCallBuffer(call)
 	errMsg, err := call.buf.ReadString()
 	if err != nil {

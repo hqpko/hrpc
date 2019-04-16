@@ -22,7 +22,7 @@ func (m *methodInfo) isOneWay() bool {
 	return m.reply == nil
 }
 
-type Server struct {
+type server struct {
 	lock       *sync.RWMutex
 	bufferPool *hutils.BufferPool
 	socket     *hnet.Socket
@@ -33,26 +33,24 @@ type Server struct {
 	readChannel *hconcurrent.Concurrent
 }
 
-func NewServer() *Server {
-	s := &Server{
+func newServer(bufferPool *hutils.BufferPool) *server {
+	s := &server{
 		lock:       new(sync.RWMutex),
 		bufferPool: hutils.NewBufferPool(),
 		protocols:  map[int32]*methodInfo{},
 		translator: new(translatorProto),
 	}
 	s.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, s.handlerSend)
-	s.sendChannel.Start()
 	s.readChannel = hconcurrent.NewConcurrent(defChannelSize, defReadChannelCount, s.handlerRead)
-	s.readChannel.Start()
 	return s
 }
 
-func (s *Server) SetTranslator(translator Translator) *Server {
+func (s *server) setTranslator(translator Translator) *server {
 	s.translator = translator
 	return s
 }
 
-func (s *Server) handlerSend(i interface{}) interface{} {
+func (s *server) handlerSend(i interface{}) interface{} {
 	if buffer, ok := i.(*hbuffer.Buffer); ok {
 		_ = s.socket.WriteBuffer(buffer)
 		s.bufferPool.Put(buffer)
@@ -60,7 +58,7 @@ func (s *Server) handlerSend(i interface{}) interface{} {
 	return nil
 }
 
-func (s *Server) handlerRead(i interface{}) interface{} {
+func (s *server) handlerRead(i interface{}) interface{} {
 	for {
 		buffer, ok := i.(*hbuffer.Buffer)
 		if !ok {
@@ -129,7 +127,7 @@ func (s *Server) handlerRead(i interface{}) interface{} {
 // handler is
 // 1. func (args interface{}) (send args only,no reply)
 // 2. func (args, reply interface{}) error
-func (s *Server) Register(protocolID int32, handler interface{}) {
+func (s *server) register(protocolID int32, handler interface{}) {
 	mValue := reflect.ValueOf(handler)
 	if mValue.Kind() != reflect.Func {
 		panic("hrpc: server register handler is not method")
@@ -162,14 +160,14 @@ func (s *Server) Register(protocolID int32, handler interface{}) {
 	}
 }
 
-func (s *Server) getMethodInfo(protocolID int32) (*methodInfo, bool) {
+func (s *server) getMethodInfo(protocolID int32) (*methodInfo, bool) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	methodInfo, ok := s.protocols[protocolID]
 	return methodInfo, ok
 }
 
-func (s *Server) setMethodInfo(protocolID int32, info *methodInfo) bool {
+func (s *server) setMethodInfo(protocolID int32, info *methodInfo) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	_, ok := s.protocols[protocolID]
@@ -180,11 +178,18 @@ func (s *Server) setMethodInfo(protocolID int32, info *methodInfo) bool {
 	return true
 }
 
-func (s *Server) Listen(socket *hnet.Socket) {
+func (s *server) run(socket *hnet.Socket) {
 	s.socket = socket
+	s.readChannel.Start()
+	s.sendChannel.Start()
 }
 
-func (s *Server) decodeArgs(argsType reflect.Type, argsBuffer *hbuffer.Buffer) (reflect.Value, error) {
+func (s *server) close() {
+	s.readChannel.Stop()
+	s.sendChannel.Stop()
+}
+
+func (s *server) decodeArgs(argsType reflect.Type, argsBuffer *hbuffer.Buffer) (reflect.Value, error) {
 	args := reflect.New(argsType.Elem())
 	return args, s.translator.Unmarshal(argsBuffer, args.Interface())
 }
