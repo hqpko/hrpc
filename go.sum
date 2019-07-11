@@ -10,8 +10,8 @@ github.com/hqpko/hconcurrent v0.1.2 h1:pz0CojHycAygEgsGRGTVJkai8D92KpG06DleQQPcM
 github.com/hqpko/hconcurrent v0.1.2/go.mod h1:7pjp8LYxqxot/j4DmyJXJt2tziy9CVmPHOtpNdK6x8g=
 github.com/hqpko/hnet v0.2.3 h1:b981kJNYpmUGhCl9Jy/YIdP8hnpMAp/wkGZFUN9OmUk=
 github.com/hqpko/hnet v0.2.3/go.mod h1:/yI6S9JttvRIwXiyCXRH5Hoow8Sg3ccfiXOE/IJS/30=
-github.com/hqpko/hticker v0.1.4 h1:PCJAuqLOqjRJ35sMKU9VLy8GhdSSsQZtb/QWzG2B8qY=
-github.com/hqpko/hticker v0.1.4/go.mod h1:RjlWznJJJHRbzc3064KZqWWCWy//uJXxsSrRBRkB4EQ=
+github.com/hqpko/hticker v0.1.5 h1:0B4wYolARFI8lb5Q9bqR40z6Oncjpi3gzCp6/MleRGY=
+github.com/hqpko/hticker v0.1.5/go.mod h1:RjlWznJJJHRbzc3064KZqWWCWy//uJXxsSrRBRkB4EQ=
 github.com/hqpko/hutils v0.1.2 h1:ZGgPWd2DW3Yx3WJGoDpvFQ3IxZEcv91rDunYxsskwZI=
 github.com/hqpko/hutils v0.1.2/go.mod h1:6yBDU4kTWr7/Tu5p97RJgYe5yJvTFl7XmdVsVY7g3kQ=
 github.com/kisielk/errcheck v1.1.0/go.mod h1:EZBBE59ingxPouuu3KfxchcWSUPOHkagtvWXihfKN4Q=
