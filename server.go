@@ -36,7 +36,7 @@ type server struct {
 func newServer(bufferPool *hutils.BufferPool) *server {
 	s := &server{
 		lock:       new(sync.RWMutex),
-		bufferPool: hutils.NewBufferPool(),
+		bufferPool: bufferPool,
 		protocols:  map[int32]*methodInfo{},
 		translator: new(translatorProto),
 	}
@@ -71,7 +71,7 @@ func (s *server) handlerRead(i interface{}) interface{} {
 		}
 		mi, ok := s.getMethodInfo(pid)
 		if !ok {
-			log.Printf("hrpc: server method is nil,pid:%d error:%s", pid, err.Error())
+			log.Printf("hrpc: server method is nil,pid:%d", pid)
 			break
 		}
 
