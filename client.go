@@ -55,10 +55,6 @@ func (c *Call) Done() error {
 	return c.error
 }
 
-func (c *Call) Error() error {
-	return c.error
-}
-
 type client struct {
 	bufferPool *hutils.BufferPool
 
