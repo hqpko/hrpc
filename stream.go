@@ -44,8 +44,8 @@ func (s *Stream) SetTranslator(trans Translator) *Stream {
 	return s
 }
 
-func (s *Stream) SetTimeoutOption(timeoutCall, stepDuration, maxTimeoutDuration time.Duration) *Stream {
-	s.client.setTimeoutOption(timeoutCall, stepDuration, maxTimeoutDuration)
+func (s *Stream) SetTimeoutOption(timeoutCall, stepDuration time.Duration) *Stream {
+	s.client.setTimeoutOption(timeoutCall, stepDuration)
 	return s
 }
 

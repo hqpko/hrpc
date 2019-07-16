@@ -94,10 +94,10 @@ func (c *client) setTranslator(translator Translator) *client {
 // SetTimeoutOption
 // timeoutCall			: duration of rpc all timeout
 // stepDuration			: step duration of checking timeout
-// maxTimeoutDuration	: max duration of rpc all timeout
-func (c *client) setTimeoutOption(timeoutCall, stepDuration, maxTimeoutDuration time.Duration) *client {
-	if maxTimeoutDuration <= timeoutCall || stepDuration >= maxTimeoutDuration {
-		panic("hrpc: client setting timeout option error")
+func (c *client) setTimeoutOption(timeoutCall, stepDuration time.Duration) *client {
+	maxTimeoutDuration := timeoutCall * 2
+	if stepDuration > timeoutCall {
+		stepDuration = timeoutCall
 	}
 	c.timeoutCall = timeoutCall
 	c.timeoutStepDuration = stepDuration
