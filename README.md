@@ -54,8 +54,8 @@ func serverListen() {
 }
 ```
 
-### 高性能低精度的超时
-```
+### 高性能低精度的超时（其实就是给每个 Call 一个超时时间，每隔一段时间检查下所有 pending 中的 Call）
+```go
 client, _ := hrpc.Connect(rpcAddr)
 
 // callTimeout, call 的超时时间
@@ -66,14 +66,14 @@ client.SetTimeoutOption(callTimeout, stepTimeout)
 ### 自定义编解码器
 自带三种编解码器:`translatorProto`,`translatorFastProto`,`translatorMarshaler`, 默认使用 `translatorProto`
 
-```
+```go
 client, _ := hrpc.Connect(rpcAddr)
 client.SetTranslator(hrpc.NewTranslatorFashProto())
 ```
 
 ### 双向通讯
 `stream` 支持双向通讯
-```
+```go
 client, _ := hrpc.Connect(rpcAddr)
 client.Register(1, func(req *proto.Req) {
 	log.Println(req.A)
