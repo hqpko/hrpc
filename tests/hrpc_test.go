@@ -5,16 +5,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hqpko/hnet"
 	"github.com/hqpko/hrpc"
 )
 
 func TestHRpc(t *testing.T) {
 	startHRpcServer()
 
-	socket, _ := hnet.ConnectSocket("tcp", hrpcAddr)
-	client := hrpc.NewStream().SetTimeoutOption(time.Second, time.Second, 10*time.Second)
-	go client.Run(socket)
+	client, _ := hrpc.Connect(hrpcAddr)
+	client.SetTimeoutOption(time.Second, time.Second, 10*time.Second)
+	go client.Run()
 
 	time.Sleep(100 * time.Millisecond)
 	if err := client.Call(2, &Req{A: 2}); err != nil {
@@ -44,8 +43,7 @@ var hrpcAddr = "127.0.0.1:12003"
 
 func startHRpcServer() {
 	go func() {
-		_ = hnet.ListenSocket("tcp", hrpcAddr, func(socket *hnet.Socket) {
-			s := hrpc.NewStream()
+		_ = hrpc.Listen(hrpcAddr, func(s *hrpc.Stream) {
 			s.Register(1, func(args *Req, reply *Resp) error {
 				reply.B = args.A + 1
 				return nil
@@ -59,7 +57,7 @@ func startHRpcServer() {
 				return nil
 			})
 			go func() {
-				_ = s.Run(socket)
+				_ = s.Run()
 			}()
 		})
 	}()
