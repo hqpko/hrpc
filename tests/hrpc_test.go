@@ -12,7 +12,7 @@ func TestHRpc(t *testing.T) {
 	startHRpcServer()
 
 	client, _ := hrpc.Connect(hrpcAddr)
-	client.SetTimeoutOption(time.Second, time.Second)
+	client.SetTimeoutOption(3*time.Second, time.Second)
 	go client.Run()
 
 	time.Sleep(100 * time.Millisecond)
@@ -52,7 +52,7 @@ func startHRpcServer() {
 				log.Println(args.A)
 			})
 			s.Register(3, func(args *Req, reply *Resp) error {
-				time.Sleep(3 * time.Second)
+				time.Sleep(5 * time.Second)
 				reply.B = args.A + 1
 				return nil
 			})

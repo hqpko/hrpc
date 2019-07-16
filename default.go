@@ -27,7 +27,6 @@ var (
 
 const (
 	defTimeoutCall         = 8 * time.Second
-	defTimeoutMaxDuration  = 16 * time.Second
 	defTimeoutStepDuration = 500 * time.Millisecond
 )
 
