@@ -67,7 +67,7 @@ func NewTranslatorFashProto() Translator {
 }
 
 func (tp *translatorFastProto) Marshal(value interface{}, writeBuffer *hbuffer.Buffer) error {
-	if pb, ok := value.(proto.Message); ok {
+	if pb, ok := value.(fast.Message); ok {
 		if bs, err := fast.Marshal(pb); err != nil {
 			return err
 		} else {
@@ -79,7 +79,7 @@ func (tp *translatorFastProto) Marshal(value interface{}, writeBuffer *hbuffer.B
 }
 
 func (tp *translatorFastProto) Unmarshal(readBuffer *hbuffer.Buffer, value interface{}) error {
-	if pb, ok := value.(proto.Message); ok {
+	if pb, ok := value.(fast.Message); ok {
 		return fast.Unmarshal(readBuffer.GetRestOfBytes(), pb)
 	}
 	return ErrNotPbMessage
