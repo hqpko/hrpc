@@ -38,7 +38,6 @@ func newServer(bufferPool *hutils.BufferPool) *server {
 		lock:       new(sync.RWMutex),
 		bufferPool: bufferPool,
 		protocols:  map[int32]*methodInfo{},
-		translator: new(translatorProto),
 	}
 	s.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, s.handlerSend)
 	s.readChannel = hconcurrent.NewConcurrent(defChannelSize, defReadChannelCount, s.handlerRead)

@@ -31,11 +31,7 @@ func Listen(addr string, handlerListenedStream func(stream *Stream)) error {
 
 func NewStream() *Stream {
 	bufferPool := hutils.NewBufferPool()
-	s := &Stream{bufferPool: bufferPool, client: newClient(bufferPool), server: newServer(bufferPool)}
-	trans := NewTranslatorProto()
-	s.client.setTranslator(trans)
-	s.server.setTranslator(trans)
-	return s
+	return &Stream{bufferPool: bufferPool, client: newClient(bufferPool), server: newServer(bufferPool)}
 }
 
 func (s *Stream) SetTranslator(trans Translator) *Stream {
