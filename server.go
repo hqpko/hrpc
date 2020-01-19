@@ -1,194 +1,96 @@
 package hrpc
 
 import (
-	"fmt"
-	"log"
 	"reflect"
 	"sync"
 
 	"github.com/hqpko/hbuffer"
-	"github.com/hqpko/hconcurrent"
 	"github.com/hqpko/hnet"
 	"github.com/hqpko/hutils"
 )
 
 type methodInfo struct {
-	method reflect.Value
-	args   reflect.Type
-	reply  reflect.Type
+	oneWay        bool
+	handler       func(seq uint64, args []byte)
+	handlerOneWay func(args []byte)
+	method        reflect.Value
+	args          reflect.Type
+	reply         reflect.Type
 }
 
 func (m *methodInfo) isOneWay() bool {
 	return m.reply == nil
 }
 
-type server struct {
-	lock       *sync.RWMutex
+type Server struct {
+	lock       sync.RWMutex
 	bufferPool *hutils.BufferPool
 	socket     *hnet.Socket
-	translator Translator
-	protocols  map[int32]*methodInfo
-
-	sendChannel *hconcurrent.Concurrent
-	readChannel *hconcurrent.Concurrent
+	protocols  sync.Map
 }
 
-func newServer(bufferPool *hutils.BufferPool) *server {
-	s := &server{
-		lock:       new(sync.RWMutex),
-		bufferPool: bufferPool,
-		protocols:  map[int32]*methodInfo{},
-	}
-	s.sendChannel = hconcurrent.NewConcurrent(defChannelSize, 1, s.handlerSend)
-	s.readChannel = hconcurrent.NewConcurrent(defChannelSize, defReadChannelCount, s.handlerRead)
-	return s
+func NewServer2(socket *hnet.Socket) *Server {
+	return &Server{socket: socket, bufferPool: hutils.NewBufferPool()}
 }
 
-func (s *server) setTranslator(translator Translator) *server {
-	s.translator = translator
-	return s
+func (s *Server) Register(pid int32, handler func(seq uint64, args []byte)) {
+	s.protocols.Store(pid, &methodInfo{oneWay: false, handler: handler})
 }
 
-func (s *server) handlerSend(i interface{}) interface{} {
-	if buffer, ok := i.(*hbuffer.Buffer); ok {
-		_ = s.socket.WriteBuffer(buffer)
+func (s *Server) RegisterOneWay(pid int32, handler func(args []byte)) {
+	s.protocols.Store(pid, &methodInfo{oneWay: true, handlerOneWay: handler})
+}
+
+func (s *Server) Run() error {
+	return s.socket.ReadBuffer(func(buffer *hbuffer.Buffer) {
+		pid, _ := buffer.ReadInt32()
+		if mi := s.getHandler(pid); mi != nil {
+			if mi.oneWay {
+				mi.handlerOneWay(buffer.CopyRestOfBytes())
+			} else {
+				seq, _ := buffer.ReadUint64()
+				mi.handler(seq, buffer.CopyRestOfBytes())
+			}
+		}
 		s.bufferPool.Put(buffer)
+	}, s.bufferPool.Get)
+}
+
+func (s *Server) getHandler(pid int32) *methodInfo {
+	if value, ok := s.protocols.Load(pid); ok {
+		return value.(*methodInfo)
 	}
 	return nil
 }
 
-func (s *server) handlerRead(i interface{}) interface{} {
-	for {
-		buffer, ok := i.(*hbuffer.Buffer)
-		if !ok {
-			break
-		}
-		pid, err := buffer.ReadInt32()
-		if err != nil {
-			log.Printf("hrpc: server read pid error:%s", err.Error())
-			break
-		}
-		mi, ok := s.getMethodInfo(pid)
-		if !ok {
-			log.Printf("hrpc: server method is nil,pid:%d", pid)
-			break
-		}
-
-		if mi.isOneWay() {
-			args, err := s.decodeArgs(mi.args, buffer)
-			if err != nil {
-				log.Printf("hrpc: server decode args error:%s", err.Error())
-				break
-			}
-			mi.method.Call([]reflect.Value{args})
-			break
-		}
-
-		seq, err := buffer.ReadUint64()
-		if err != nil {
-			log.Printf("hrpc: server read seq error:%s", err.Error())
-			break
-		}
-
-		args, err := s.decodeArgs(mi.args, buffer)
-		if err != nil {
-			log.Printf("hrpc: server decode args error:%s", err.Error())
-			break
-		}
-
-		reply := reflect.New(mi.reply.Elem())
-		returnValues := mi.method.Call([]reflect.Value{args, reply})
-
-		buffer.Reset()
-		buffer.WriteEndianUint32(0)
-		buffer.WriteByte(callTypeResponse)
-		buffer.WriteUint64(seq)
-		errInter := returnValues[0].Interface()
-		if errInter != nil {
-			errMsg := errInter.(error).Error()
-			buffer.WriteString(errMsg)
-		} else {
-			buffer.WriteString("") // error msg is empty
-			err := s.translator.Marshal(reply.Interface(), buffer)
-			if err != nil {
-				log.Printf("hrpc: server encode reply error:%s", err.Error())
-				break
-			}
-		}
-		buffer.SetPosition(0)
-		buffer.WriteEndianUint32(uint32(buffer.Len() - 4))
-		s.sendChannel.MustInput(buffer)
-		break
-	}
-	return nil
+func (s *Server) OneWay(pid int32, args []byte) error {
+	buf := s.bufferPool.Get()
+	defer s.bufferPool.Put(buf)
+	s.fillGo(buf, pid, args)
+	return s.socket.WriteBuffer(buf)
 }
 
-// handler is
-// 1. func (args interface{}) (send args only,no reply)
-// 2. func (args, reply interface{}) error
-func (s *server) register(protocolID int32, handler interface{}) {
-	mValue := reflect.ValueOf(handler)
-	if mValue.Kind() != reflect.Func {
-		panic("hrpc: server register handler is not method")
-	}
-	mType := reflect.TypeOf(handler)
-	if mType.NumIn() < 1 {
-		panic("hrpc: server register handler num in < 1")
-	}
-
-	isOneWay := mType.NumIn() == 1
-	if !isOneWay { // handler will return error
-		if mType.NumOut() != 1 {
-			panic("hrpc: server register handler num out != 1")
-		}
-		outType := mType.Out(0)
-		if outType != errorType {
-			panic("hrpc: server register handler num out type is not error")
-		}
-	}
-
-	methodInfo := &methodInfo{
-		method: mValue,
-		args:   mType.In(0),
-	}
-	if !isOneWay {
-		methodInfo.reply = mType.In(1)
-	}
-	if !s.setMethodInfo(protocolID, methodInfo) {
-		panic(fmt.Sprintf("register protocol error,id exist:%d", protocolID))
-	}
+func (s *Server) Reply(seq uint64, reply []byte) error {
+	buf := s.bufferPool.Get()
+	defer s.bufferPool.Put(buf)
+	s.fillReply(buf, seq, reply)
+	return s.socket.WriteBuffer(buf)
 }
 
-func (s *server) getMethodInfo(protocolID int32) (*methodInfo, bool) {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-	methodInfo, ok := s.protocols[protocolID]
-	return methodInfo, ok
+func (s *Server) fillGo(buffer *hbuffer.Buffer, pid int32, args []byte) {
+	buffer.WriteEndianUint32(0)
+	buffer.WriteBool(false) // not reply
+	buffer.WriteInt32(pid)
+	buffer.WriteBytes(args)
+	buffer.SetPosition(0)
+	buffer.WriteEndianUint32(uint32(buffer.Len() - 4))
 }
 
-func (s *server) setMethodInfo(protocolID int32, info *methodInfo) bool {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	_, ok := s.protocols[protocolID]
-	if ok {
-		return false
-	}
-	s.protocols[protocolID] = info
-	return true
-}
-
-func (s *server) run(socket *hnet.Socket) {
-	s.socket = socket
-	s.readChannel.Start()
-	s.sendChannel.Start()
-}
-
-func (s *server) close() {
-	s.readChannel.Stop()
-	s.sendChannel.Stop()
-}
-
-func (s *server) decodeArgs(argsType reflect.Type, argsBuffer *hbuffer.Buffer) (reflect.Value, error) {
-	args := reflect.New(argsType.Elem())
-	return args, s.translator.Unmarshal(argsBuffer, args.Interface())
+func (s *Server) fillReply(buffer *hbuffer.Buffer, seq uint64, reply []byte) {
+	buffer.WriteEndianUint32(0)
+	buffer.WriteBool(true) // is reply
+	buffer.WriteUint64(seq)
+	buffer.WriteBytes(reply)
+	buffer.SetPosition(0)
+	buffer.WriteEndianUint32(uint32(buffer.Len() - 4))
 }
