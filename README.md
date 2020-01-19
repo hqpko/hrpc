@@ -1,86 +1,67 @@
 # hrpc
 
 ### example
-https://github.com/hqpko/hrpc-example
 
-参考 `go` 自带的 `rpc`，添加了几个额外的功能
-
-### 高性能低精度的超时（其实就是给每个 Call 一个超时时间，每隔一段时间检查下所有 pending 中的 Call）
 ```go
-client, _ := hrpc.Connect(rpcAddr)
+package main
 
-// callTimeout, call 的超时时间
-// stepTimeout, 每隔 stepTimeout 时间间隔检查一次超时
-client.SetTimeoutOption(callTimeout, stepTimeout)
-```
+import (
+	"fmt"
+	"time"
 
-### 可以自定义编解码器
+	"github.com/hqpko/hnet"
 
-##### proto
-```go
-type translatorProto struct{}
+	"github.com/hqpko/hrpc"
+)
 
-func NewTranslatorProto() Translator {
-	return new(translatorProto)
+const rpcAddr = "127.0.0.1:9001"
+
+var server *hrpc.Server
+
+func main() {
+	go listenConn()
+	time.Sleep(time.Second)
+
+	socket, _ := hnet.ConnectSocket("tcp", rpcAddr)
+	client := hrpc.NewClientWithOption(socket, time.Millisecond*100, time.Second)
+
+	// client 仅能注册 仅接收无返回(oneWay) 协议，避免死锁
+	client.RegisterOneWay(3, func(args []byte) {
+		fmt.Printf("Server.OneWay\n")
+	})
+	go client.Run()
+
+	// client.Call 请求并接收返回
+	reply, err := client.Call(1, []byte{1})
+	fmt.Printf("Client.Call, reply:%v, error:%v\n", reply, err) // [1],nil
+
+	// client.Go 请求并返回请求产生的 Call，不阻塞等待返回，可以使用 call.Done() 等待返回
+	call, _ := client.Go(1, []byte{1})
+	reply, timeout := call.Done()
+	fmt.Printf("Client.Go, reply:%v, timeout:%v\n", reply, timeout) // [1],nil
+
+	// client.OneWay 仅发送请求，无返回
+	err = client.OneWay(2, []byte{1})
+	fmt.Printf("Client.OneWay, error:%v\n", err) // nil
+
+	// server.OneWay 仅发送请求，无返回，再次说明，server 不支持 Call，避免和 Client 互相 Call 导致死锁
+	server.OneWay(3, []byte{1})
+
+	time.Sleep(time.Second)
 }
 
-func (tp *translatorProto) Marshal(value interface{}, writeBuffer *hbuffer.Buffer) error {
-	if pb, ok := value.(proto.Message); ok {
-		if bs, err := proto.Marshal(pb); err != nil {
-			return err
-		} else {
-			writeBuffer.WriteBytes(bs)
-			return nil
-		}
-	}
-	return ErrNotPbMessage
-}
+func listenConn() {
+	hnet.ListenSocket("tcp", rpcAddr, func(socket *hnet.Socket) {
+		server = hrpc.NewServer(socket)
 
-func (tp *translatorProto) Unmarshal(readBuffer *hbuffer.Buffer, value interface{}) error {
-	if pb, ok := value.(proto.Message); ok {
-		return proto.Unmarshal(readBuffer.GetRestOfBytes(), pb)
-	}
-	return ErrNotPbMessage
-}
-```
-##### fast proto
-```go
-type translatorFastProto struct{}
-
-func NewTranslatorFastProto() Translator {
-	return new(translatorFastProto)
-}
-
-func (tp *translatorFastProto) Marshal(value interface{}, writeBuffer *hbuffer.Buffer) error {
-	if pb, ok := value.(fast.Message); ok {
-		if bs, err := fast.Marshal(pb); err != nil {
-			return err
-		} else {
-			writeBuffer.WriteBytes(bs)
-			return nil
-		}
-	}
-	return ErrNotPbMessage
-}
-
-func (tp *translatorFastProto) Unmarshal(readBuffer *hbuffer.Buffer, value interface{}) error {
-	if pb, ok := value.(fast.Message); ok {
-		return fast.Unmarshal(readBuffer.GetRestOfBytes(), pb)
-	}
-	return ErrNotPbMessage
+		// server 端注册应答式协议
+		server.Register(1, func(seq uint64, args []byte) {
+			server.Reply(seq, args)
+		})
+		// server 端注册 仅接收无返回(oneWay) 协议
+		server.RegisterOneWay(2, func(args []byte) {})
+		go server.Run()
+	})
 }
 
 ```
-
-### 双向通讯
-`stream` 支持双向通讯
-```go
-client, _ := hrpc.Connect(rpcAddr)
-client.Register(1, func(req *proto.Req) {
-	log.Println(req.A)
-})
-
-......
-server.Call(1,&proto.Req{A:1})
-```
-> 注意：为了避免死锁，请在 `Client` 端 **只** 注册 `oneway` 方式的协议，即 `Client` 只注册 `func (req)` 协议，避免注册 `func(req,resp)` 协议（当 `Client` 发起一个请求并等待 `Server` 返回时，进入锁状态，此时如果 `Server` 也发起了一个 `req-resp` 请求，`Client` 无法响应，导致死锁）
