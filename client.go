@@ -1,6 +1,7 @@
 package hrpc
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -9,9 +10,17 @@ import (
 	"github.com/hqpko/hutils"
 )
 
+const (
+	defCallTimeoutDuration      = time.Second * 8
+	defCheckTimeoutStepDuration = time.Millisecond * 100
+)
+
+var Timeout = errors.New("call timeout")
+
 type Call struct {
 	reply       []byte
 	timeoutNano int64
+	err         error
 	c           chan *Call
 }
 
@@ -22,9 +31,19 @@ func (c *Call) done() {
 	}
 }
 
-func (c *Call) Done() []byte {
+func (c *Call) doneWithErr(err error) {
+	c.err = err
+	c.done()
+}
+
+func (c *Call) doneWithReply(reply []byte) {
+	c.reply = reply
+	c.done()
+}
+
+func (c *Call) Done() ([]byte, error) {
 	<-c.c
-	return c.reply
+	return c.reply, c.err
 }
 
 type Client struct {
@@ -35,17 +54,24 @@ type Client struct {
 	protocols  sync.Map
 	socket     *hnet.Socket
 
-	timeoutStep     time.Duration
-	timeoutTicker   *time.Ticker
-	timeoutDuration time.Duration
+	timeoutTicker       *timeoutTicker
+	timeoutCallDuration time.Duration
 }
 
 func NewClient(socket *hnet.Socket) *Client {
-	return &Client{
-		socket:          socket,
-		bufferPool:      hutils.NewBufferPool(),
-		timeoutDuration: time.Second * 8,
+	return NewClientWithOption(socket, defCheckTimeoutStepDuration, defCallTimeoutDuration)
+}
+
+// timeoutCheckStep 每隔 step 时间检查一次所有未完成的 Call 的超时状态
+// timeoutCallDuration 每个 Call 的超时时间
+func NewClientWithOption(socket *hnet.Socket, timeoutCheckStep, timeoutCallDuration time.Duration) *Client {
+	client := &Client{
+		socket:              socket,
+		bufferPool:          hutils.NewBufferPool(),
+		timeoutCallDuration: timeoutCallDuration,
 	}
+	client.timeoutTicker = newTimeoutTicker(timeoutCheckStep, client.checkTimeout)
+	return client
 }
 
 // RegisterOneWay, client can only register one way
@@ -54,9 +80,8 @@ func (c *Client) RegisterOneWay(pid int32, handler func(args []byte)) {
 }
 
 func (c *Client) Run() error {
-	c.timeoutTicker = time.NewTicker(c.timeoutDuration)
-	go c.loopTimeout()
-	defer c.timeoutTicker.Stop()
+	go c.timeoutTicker.start()
+	defer c.timeoutTicker.stop()
 
 	return c.socket.ReadBuffer(func(buffer *hbuffer.Buffer) {
 		isReply, _ := buffer.ReadBool()
@@ -64,8 +89,7 @@ func (c *Client) Run() error {
 			seq, _ := buffer.ReadUint64()
 			if value, ok := c.pending.Load(seq); ok {
 				call := value.(*Call)
-				call.reply = buffer.CopyRestOfBytes()
-				call.done()
+				call.doneWithReply(buffer.CopyRestOfBytes())
 			}
 		} else {
 			pid, _ := buffer.ReadInt32()
@@ -77,10 +101,16 @@ func (c *Client) Run() error {
 	}, c.bufferPool.Get)
 }
 
-func (c *Client) loopTimeout() {
-	for {
-		<-c.timeoutTicker.C
-	}
+func (c *Client) checkTimeout() {
+	nowNano := time.Now().UnixNano()
+	c.pending.Range(func(key, value interface{}) bool {
+		call := value.(*Call)
+		if call.timeoutNano <= nowNano {
+			call.doneWithErr(Timeout)
+			c.protocols.Delete(key)
+		}
+		return true
+	})
 }
 
 func (c *Client) Call(pid int32, args []byte) ([]byte, error) {
@@ -88,7 +118,7 @@ func (c *Client) Call(pid int32, args []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return call.Done(), nil
+	return call.Done()
 }
 
 func (c *Client) OneWay(pid int32, args []byte) error {
@@ -135,5 +165,5 @@ func (c *Client) fillOneWay(buffer *hbuffer.Buffer, pid int32, args []byte) {
 }
 
 func (c *Client) newCall() *Call {
-	return &Call{timeoutNano: time.Now().Add(c.timeoutDuration).UnixNano(), c: make(chan *Call, 1)}
+	return &Call{timeoutNano: time.Now().Add(c.timeoutCallDuration).UnixNano(), c: make(chan *Call, 1)}
 }

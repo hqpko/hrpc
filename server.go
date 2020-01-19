@@ -3,6 +3,7 @@ package hrpc
 import (
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/hqpko/hbuffer"
 	"github.com/hqpko/hnet"
@@ -22,6 +23,36 @@ func (m *methodInfo) isOneWay() bool {
 	return m.reply == nil
 }
 
+type timeoutTicker struct {
+	ticker *time.Ticker
+	step   time.Duration
+	f      func()
+	close  chan bool
+}
+
+func newTimeoutTicker(step time.Duration, f func()) *timeoutTicker {
+	return &timeoutTicker{step: step, f: f, close: make(chan bool, 1)}
+}
+
+func (tt *timeoutTicker) start() {
+	tt.ticker = time.NewTicker(tt.step)
+	for {
+		select {
+		case <-tt.ticker.C:
+			tt.f()
+		case <-tt.close:
+			return
+		}
+	}
+}
+
+func (tt *timeoutTicker) stop() {
+	if tt.ticker != nil {
+		tt.ticker.Stop()
+	}
+	tt.close <- true
+}
+
 type Server struct {
 	lock       sync.RWMutex
 	bufferPool *hutils.BufferPool
@@ -29,7 +60,7 @@ type Server struct {
 	protocols  sync.Map
 }
 
-func NewServer2(socket *hnet.Socket) *Server {
+func NewServer(socket *hnet.Socket) *Server {
 	return &Server{socket: socket, bufferPool: hutils.NewBufferPool()}
 }
 
