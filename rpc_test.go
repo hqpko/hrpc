@@ -13,25 +13,29 @@ func TestRPC(t *testing.T) {
 	data := []byte{1}
 	var server *Server
 	go hnet.ListenSocket("tcp", addr, func(socket *hnet.Socket) {
-		server = NewServer(socket)
-		server.Register(1, func(seq uint64, args []byte) {
-			_ = server.Reply(seq, args)
-		})
-		server.RegisterOneWay(2, func(args []byte) {
-			if !bytes.Equal(data, args) {
-				t.Errorf("server receive data error")
+		server = NewServer()
+		server.SetSocket(socket)
+		server.SetHandlerCall(func(pid int32, seq uint64, args []byte) {
+			switch pid {
+			case 1:
+				_ = server.Reply(seq, args)
+			case 2:
+				// do nothing
 			}
 		})
-		server.Register(3, func(seq uint64, args []byte) {
-			// timeout
+		server.SetHandlerOneWay(func(pid int32, args []byte) {
+			if pid != 3 || !bytes.Equal(data, args) {
+				t.Errorf("server receive data error")
+			}
 		})
 		_ = server.Run()
 	})
 
 	socket, _ := hnet.ConnectSocket("tcp", addr)
-	client := NewClientWithOption(socket, time.Millisecond*100, time.Second)
-	client.RegisterOneWay(4, func(args []byte) {
-		if !bytes.Equal(data, args) {
+	client := NewClientWithOption(time.Millisecond*100, time.Second)
+	client.SetSocket(socket)
+	client.SetHandlerOneWay(func(pid int32, args []byte) {
+		if pid != 4 || !bytes.Equal(data, args) {
 			t.Errorf("client receive oneWay fail.")
 		}
 	})
@@ -45,7 +49,7 @@ func TestRPC(t *testing.T) {
 	}
 
 	// Client.Call timeout
-	if _, err := client.Call(3, data); err != Timeout {
+	if _, err := client.Call(2, data); err != Timeout {
 		t.Errorf("Client.Call timeout fail")
 	}
 
@@ -57,7 +61,7 @@ func TestRPC(t *testing.T) {
 	}
 
 	// Client.OneWay
-	if err := client.OneWay(2, data); err != nil {
+	if err := client.OneWay(3, data); err != nil {
 		t.Errorf("Client.OneWay error:%s", err.Error())
 	}
 
