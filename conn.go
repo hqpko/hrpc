@@ -95,3 +95,14 @@ func (c *conn) fillCall(buffer *hbuffer.Buffer, pid int32, seq uint64, args []by
 	buffer.SetPosition(0)
 	buffer.WriteEndianUint32(uint32(buffer.Len() - 4))
 }
+
+func (c *conn) Close() (err error) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if c.socket != nil {
+		err = c.socket.Close()
+		c.socket = nil
+	}
+
+	return
+}

@@ -69,4 +69,7 @@ func TestRPC(t *testing.T) {
 	if err := server.OneWay(4, data); err != nil {
 		t.Errorf("Server.OneWay error:%s", err.Error())
 	}
+
+	_ = client.Close()
+	_ = server.Close()
 }
