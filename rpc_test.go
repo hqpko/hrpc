@@ -56,8 +56,10 @@ func TestRPC(t *testing.T) {
 	// Client.Go
 	if call, err := client.Go(1, data); err != nil {
 		t.Errorf("Client.Go error:%s", err.Error())
-	} else if reply, _ := call.Done(); !bytes.Equal(data, reply) {
-		t.Errorf("Client.Go fail")
+	} else if reply, err := call.Done(); err != nil {
+		t.Errorf("Client.Go fail %v", err)
+	} else if !bytes.Equal(reply, data) {
+		t.Errorf("Client.Go fail, reply:%v,shouldBe:%v\n", reply, data)
 	}
 
 	// Client.OneWay

@@ -40,6 +40,7 @@ func (c *conn) setHandlerCall(handler func(pid int32, seq uint64, args []byte)) 
 
 func (c *conn) run(f func(buffer *hbuffer.Buffer)) error {
 	return c.socket.ReadBuffer(f, func() *hbuffer.Buffer {
+		c.readBuffer.Reset()
 		return c.readBuffer
 	})
 }
