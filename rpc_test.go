@@ -54,8 +54,8 @@ func TestRPC(t *testing.T) {
 	}
 
 	// Client.Go
-	if call, err := client.Go(1, data); err != nil {
-		t.Errorf("Client.Go error:%s", err.Error())
+	if call := client.Go(1, data); call.err != nil {
+		t.Errorf("Client.Go error:%s", call.err.Error())
 	} else if reply, err := call.Done(); err != nil {
 		t.Errorf("Client.Go fail %v", err)
 	} else if !bytes.Equal(reply, data) {

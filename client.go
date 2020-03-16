@@ -77,8 +77,9 @@ func (tt *timeoutTicker) stop() {
 
 type Client struct {
 	*conn
-	seq     uint64
-	pending sync.Map
+	seq         uint64
+	pendingLock sync.Mutex
+	pending     map[uint64]*Call
 
 	timeoutTicker       *timeoutTicker
 	timeoutCallDuration time.Duration
@@ -93,6 +94,7 @@ func NewClient() *Client {
 func NewClientWithOption(timeoutCheckStep, timeoutCallDuration time.Duration) *Client {
 	client := &Client{
 		conn:                newConn(),
+		pending:             map[uint64]*Call{},
 		timeoutCallDuration: timeoutCallDuration,
 	}
 	client.timeoutTicker = newTimeoutTicker(timeoutCheckStep, client.checkTimeout)
@@ -107,10 +109,7 @@ func (c *Client) Run() error {
 		isCall, _ := buffer.ReadBool()
 		if isCall {
 			seq, _ := buffer.ReadUint64()
-			if value, ok := c.pending.Load(seq); ok {
-				call := value.(*Call)
-				call.doneWithReply(buffer.CopyRestOfBytes())
-			}
+			c.callReply(seq, buffer.CopyRestOfBytes())
 		} else {
 			pid, _ := buffer.ReadInt32()
 			c.handlerOneWay(pid, buffer.CopyRestOfBytes())
@@ -119,36 +118,57 @@ func (c *Client) Run() error {
 }
 
 func (c *Client) Call(pid int32, args []byte) ([]byte, error) {
-	call, err := c.Go(pid, args)
-	if err != nil {
-		return nil, err
-	}
-	return call.Done()
+	return c.Go(pid, args).Done()
 }
 
-func (c *Client) Go(pid int32, args []byte) (call *Call, err error) {
-	call = c.newCall()
+func (c *Client) Go(pid int32, args []byte) *Call {
 	seq := atomic.AddUint64(&c.seq, 1)
-	c.pending.Store(seq, call)
+	call := c.callPush(seq)
 
-	if err = c.call(pid, seq, args); err != nil {
-		c.pending.Delete(seq)
+	if err := c.call(pid, seq, args); err != nil {
+		c.callError(seq, err)
 	}
-	return
+	return call
 }
 
 func (c *Client) checkTimeout() {
 	nowNano := time.Now().UnixNano()
-	c.pending.Range(func(key, value interface{}) bool {
-		call := value.(*Call)
+	c.pendingLock.Lock()
+	defer c.pendingLock.Unlock()
+	for seq, call := range c.pending {
 		if call.timeoutNano <= nowNano {
 			call.doneWithErr(Timeout)
-			c.pending.Delete(key)
+			delete(c.pending, seq)
 		}
-		return true
-	})
+	}
 }
 
-func (c *Client) newCall() *Call {
-	return &Call{timeoutNano: time.Now().Add(c.timeoutCallDuration).UnixNano(), c: make(chan *Call, 1)}
+func (c *Client) callPush(seq uint64) *Call {
+	call := &Call{timeoutNano: time.Now().Add(c.timeoutCallDuration).UnixNano(), c: make(chan *Call, 1)}
+	c.pendingLock.Lock()
+	defer c.pendingLock.Unlock()
+	c.pending[seq] = call
+	return call
+}
+
+func (c *Client) callReply(seq uint64, reply []byte) {
+	if call := c.callPop(seq); call != nil {
+		call.doneWithReply(reply)
+	}
+}
+
+func (c *Client) callError(seq uint64, err error) {
+	if call := c.callPop(seq); call != nil {
+		call.doneWithErr(err)
+	}
+}
+
+func (c *Client) callPop(seq uint64) *Call {
+	c.pendingLock.Lock()
+	defer c.pendingLock.Unlock()
+	if call, ok := c.pending[seq]; ok {
+		delete(c.pending, seq)
+		return call
+	}
+	return nil
 }
