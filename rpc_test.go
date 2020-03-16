@@ -32,7 +32,7 @@ func TestRPC(t *testing.T) {
 	})
 
 	socket, _ := hnet.ConnectSocket("tcp", addr)
-	client := NewClientWithOption(time.Millisecond*100, time.Second)
+	client := NewClientWithOption(time.Second)
 	client.SetSocket(socket)
 	client.SetHandlerOneWay(func(pid int32, args []byte) {
 		if pid != 4 || !bytes.Equal(data, args) {
