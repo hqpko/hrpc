@@ -67,34 +67,31 @@ func (c *conn) reply(seq uint64, reply []byte) error {
 }
 
 func (c *conn) fillReply(buffer *hbuffer.Buffer, seq uint64, reply []byte) {
-	buffer.Reset()
-	buffer.WriteEndianUint32(0)
-	buffer.WriteBool(true) // is call
-	buffer.WriteUint64(seq)
-	buffer.WriteBytes(reply)
-	buffer.SetPosition(0)
-	buffer.WriteEndianUint32(uint32(buffer.Len() - 4))
+	buffer.Reset().
+		WriteEndianUint32(0).
+		WriteBool(true). // is call
+		WriteUint64(seq).
+		WriteBytes(reply).
+		UpdateHead()
 }
 
 func (c *conn) fillOneWay(buffer *hbuffer.Buffer, pid int32, args []byte) {
-	buffer.Reset()
-	buffer.WriteEndianUint32(0)
-	buffer.WriteBool(false) // not call
-	buffer.WriteInt32(pid)
-	buffer.WriteBytes(args)
-	buffer.SetPosition(0)
-	buffer.WriteEndianUint32(uint32(buffer.Len() - 4))
+	buffer.Reset().
+		WriteEndianUint32(0).
+		WriteBool(false). // not call
+		WriteInt32(pid).
+		WriteBytes(args).
+		UpdateHead()
 }
 
 func (c *conn) fillCall(buffer *hbuffer.Buffer, pid int32, seq uint64, args []byte) {
-	buffer.Reset()
-	buffer.WriteEndianUint32(0)
-	buffer.WriteBool(true) // is call
-	buffer.WriteInt32(pid)
-	buffer.WriteUint64(seq)
-	buffer.WriteBytes(args)
-	buffer.SetPosition(0)
-	buffer.WriteEndianUint32(uint32(buffer.Len() - 4))
+	buffer.Reset().
+		WriteEndianUint32(0).
+		WriteBool(true). // is call
+		WriteInt32(pid).
+		WriteUint64(seq).
+		WriteBytes(args).
+		UpdateHead()
 }
 
 func (c *conn) Close() (err error) {
