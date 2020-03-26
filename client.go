@@ -78,13 +78,13 @@ func (c *Client) SetHandlerOneWay(handler func(pid int32, args []byte)) *Client 
 
 func (c *Client) Run() error {
 	return c.run(func(buffer *hbuffer.Buffer) {
-		isCall, _ := buffer.ReadBool()
-		if isCall {
-			seq, _ := buffer.ReadUint64()
-			c.callReply(seq, buffer.CopyRestOfBytes())
-		} else {
+		msgType, _ := buffer.ReadByte()
+		if msgType == msgTypeOneWay {
 			pid, _ := buffer.ReadInt32()
 			c.handlerOneWay(pid, buffer.CopyRestOfBytes())
+		} else if msgType == msgTypeReply {
+			seq, _ := buffer.ReadUint64()
+			c.callReply(seq, buffer.CopyRestOfBytes())
 		}
 	})
 }

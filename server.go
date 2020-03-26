@@ -25,12 +25,12 @@ func (s *Server) SetHandlerCall(handler func(pid int32, seq uint64, args []byte)
 
 func (s *Server) Run() error {
 	return s.run(func(buffer *hbuffer.Buffer) {
-		isCall, _ := buffer.ReadBool()
+		msgType, _ := buffer.ReadByte()
 		pid, _ := buffer.ReadInt32()
-		if isCall {
+		if msgType == msgTypeCall {
 			seq, _ := buffer.ReadUint64()
 			s.handlerCall(pid, seq, buffer.CopyRestOfBytes())
-		} else {
+		} else if msgType == msgTypeOneWay {
 			s.handlerOneWay(pid, buffer.CopyRestOfBytes())
 		}
 	})

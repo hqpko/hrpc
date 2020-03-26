@@ -7,6 +7,13 @@ import (
 	"github.com/hqpko/hnet"
 )
 
+const (
+	msgTypeUnknown = iota
+	msgTypeCall
+	msgTypeOneWay
+	msgTypeReply
+)
+
 type conn struct {
 	lock          sync.RWMutex
 	socket        *hnet.Socket
@@ -33,10 +40,7 @@ func (c *conn) setHandlerCall(handler func(pid int32, seq uint64, args []byte)) 
 }
 
 func (c *conn) run(f func(buffer *hbuffer.Buffer)) error {
-	return c.socket.ReadBuffer(f, func() *hbuffer.Buffer {
-		c.readBuffer.Reset()
-		return c.readBuffer
-	})
+	return c.socket.ReadBuffer(f, c.readBuffer.Reset)
 }
 
 func (c *conn) OneWay(pid int32, args []byte) error {
@@ -63,7 +67,7 @@ func (c *conn) reply(seq uint64, reply []byte) error {
 func (c *conn) fillReply(buffer *hbuffer.Buffer, seq uint64, reply []byte) {
 	buffer.Reset().
 		WriteEndianUint32(0).
-		WriteBool(true). // is call
+		WriteByte(msgTypeReply).
 		WriteUint64(seq).
 		WriteBytes(reply).
 		UpdateHead()
@@ -72,7 +76,7 @@ func (c *conn) fillReply(buffer *hbuffer.Buffer, seq uint64, reply []byte) {
 func (c *conn) fillOneWay(buffer *hbuffer.Buffer, pid int32, args []byte) {
 	buffer.Reset().
 		WriteEndianUint32(0).
-		WriteBool(false). // not call
+		WriteByte(msgTypeOneWay).
 		WriteInt32(pid).
 		WriteBytes(args).
 		UpdateHead()
@@ -81,7 +85,7 @@ func (c *conn) fillOneWay(buffer *hbuffer.Buffer, pid int32, args []byte) {
 func (c *conn) fillCall(buffer *hbuffer.Buffer, pid int32, seq uint64, args []byte) {
 	buffer.Reset().
 		WriteEndianUint32(0).
-		WriteBool(true). // is call
+		WriteByte(msgTypeCall).
 		WriteInt32(pid).
 		WriteUint64(seq).
 		WriteBytes(args).
@@ -95,6 +99,5 @@ func (c *conn) Close() (err error) {
 		err = c.socket.Close()
 		c.socket = nil
 	}
-
 	return
 }
