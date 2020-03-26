@@ -47,7 +47,7 @@ func TestRPC(t *testing.T) {
 	}
 
 	// Client.Call timeout
-	if _, err := client.Call(2, data); err != Timeout {
+	if _, err := client.Call(2, data); err != ErrCallTimeout {
 		t.Errorf("Client.Call timeout fail")
 	}
 

@@ -17,6 +17,7 @@ const (
 type conn struct {
 	lock          sync.RWMutex
 	socket        *hnet.Socket
+	pending       *pending
 	readBuffer    *hbuffer.Buffer
 	writeBuffer   *hbuffer.Buffer
 	handlerCall   func(pid int32, seq uint64, args []byte)
@@ -24,7 +25,7 @@ type conn struct {
 }
 
 func newConn(socket *hnet.Socket) *conn {
-	return &conn{socket: socket, readBuffer: hbuffer.NewBuffer(), writeBuffer: hbuffer.NewBuffer()}
+	return &conn{socket: socket, pending: newPending(), readBuffer: hbuffer.NewBuffer(), writeBuffer: hbuffer.NewBuffer()}
 }
 
 func (c *conn) setHandlerOneWay(handler func(pid int32, args []byte)) {
@@ -39,33 +40,52 @@ func (c *conn) setHandlerCall(handler func(pid int32, seq uint64, args []byte)) 
 	c.handlerCall = handler
 }
 
-func (c *conn) run(f func(buffer *hbuffer.Buffer)) error {
-	return c.socket.ReadBuffer(f, c.readBuffer.Reset)
+func (c *conn) run() error {
+	return c.socket.ReadBuffer(func(buffer *hbuffer.Buffer) {
+		msgType, _ := buffer.ReadByte()
+		switch msgType {
+		case msgTypeOneWay:
+			pid, _ := buffer.ReadInt32()
+			c.handlerOneWay(pid, buffer.CopyRestOfBytes())
+		case msgTypeCall:
+			pid, _ := buffer.ReadInt32()
+			seq, _ := buffer.ReadUint64()
+			c.handlerCall(pid, seq, buffer.CopyRestOfBytes())
+		case msgTypeReply:
+			seq, _ := buffer.ReadUint64()
+			c.pending.reply(seq, buffer.CopyRestOfBytes())
+		}
+	}, c.readBuffer.Reset)
 }
 
-func (c *conn) OneWay(pid int32, args []byte) error {
+func (c *conn) oneWay(pid int32, args []byte) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	c.fillOneWay(c.writeBuffer, pid, args)
-	return c.socket.WriteBuffer(c.writeBuffer)
+	return c.socket.WriteBuffer(c.fillOneWay(pid, args))
 }
 
-func (c *conn) call(pid int32, seq uint64, args []byte) error {
+func (c *conn) call(pid int32, args []byte) *Call {
+	call, seq := c.pending.new()
+	if err := c.tryCall(pid, seq, args); err != nil {
+		c.pending.error(seq, err)
+	}
+	return call
+}
+
+func (c *conn) tryCall(pid int32, seq uint64, args []byte) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	c.fillCall(c.writeBuffer, pid, seq, args)
-	return c.socket.WriteBuffer(c.writeBuffer)
+	return c.socket.WriteBuffer(c.fillCall(pid, seq, args))
 }
 
 func (c *conn) reply(seq uint64, reply []byte) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	c.fillReply(c.writeBuffer, seq, reply)
-	return c.socket.WriteBuffer(c.writeBuffer)
+	return c.socket.WriteBuffer(c.fillReply(seq, reply))
 }
 
-func (c *conn) fillReply(buffer *hbuffer.Buffer, seq uint64, reply []byte) {
-	buffer.Reset().
+func (c *conn) fillReply(seq uint64, reply []byte) *hbuffer.Buffer {
+	return c.writeBuffer.Reset().
 		WriteEndianUint32(0).
 		WriteByte(msgTypeReply).
 		WriteUint64(seq).
@@ -73,8 +93,8 @@ func (c *conn) fillReply(buffer *hbuffer.Buffer, seq uint64, reply []byte) {
 		UpdateHead()
 }
 
-func (c *conn) fillOneWay(buffer *hbuffer.Buffer, pid int32, args []byte) {
-	buffer.Reset().
+func (c *conn) fillOneWay(pid int32, args []byte) *hbuffer.Buffer {
+	return c.writeBuffer.Reset().
 		WriteEndianUint32(0).
 		WriteByte(msgTypeOneWay).
 		WriteInt32(pid).
@@ -82,8 +102,8 @@ func (c *conn) fillOneWay(buffer *hbuffer.Buffer, pid int32, args []byte) {
 		UpdateHead()
 }
 
-func (c *conn) fillCall(buffer *hbuffer.Buffer, pid int32, seq uint64, args []byte) {
-	buffer.Reset().
+func (c *conn) fillCall(pid int32, seq uint64, args []byte) *hbuffer.Buffer {
+	return c.writeBuffer.Reset().
 		WriteEndianUint32(0).
 		WriteByte(msgTypeCall).
 		WriteInt32(pid).
@@ -92,7 +112,7 @@ func (c *conn) fillCall(buffer *hbuffer.Buffer, pid int32, seq uint64, args []by
 		UpdateHead()
 }
 
-func (c *conn) Close() (err error) {
+func (c *conn) close() (err error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	if c.socket != nil {
