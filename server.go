@@ -2,18 +2,25 @@ package hrpc
 
 import (
 	"github.com/hqpko/hbuffer"
+	"github.com/hqpko/hnet"
 )
 
 type Server struct {
 	*conn
 }
 
-func NewServer() *Server {
-	return &Server{conn: newConn()}
+func NewServer(socket *hnet.Socket) *Server {
+	return &Server{conn: newConn(socket)}
 }
 
-func (s *Server) SetHandlerCall(handler func(pid int32, seq uint64, args []byte)) {
+func (s *Server) SetHandlerOneWay(handler func(pid int32, args []byte)) *Server {
+	s.setHandlerOneWay(handler)
+	return s
+}
+
+func (s *Server) SetHandlerCall(handler func(pid int32, seq uint64, args []byte)) *Server {
 	s.handlerCall = handler
+	return s
 }
 
 func (s *Server) Run() error {

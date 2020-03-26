@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/hqpko/hbuffer"
+	"github.com/hqpko/hnet"
 )
 
 const (
@@ -51,21 +52,28 @@ type Client struct {
 	pendingLock sync.Mutex
 	pending     map[uint64]*Call
 
-	timeoutCallDuration time.Duration
+	callTimeoutDuration time.Duration
 }
 
-func NewClient() *Client {
-	return NewClientWithOption(defCallTimeoutDuration)
-}
-
-// timeoutCallDuration 每个 Call 的超时时间
-func NewClientWithOption(timeoutCallDuration time.Duration) *Client {
+func NewClient(socket *hnet.Socket) *Client {
 	client := &Client{
-		conn:                newConn(),
+		conn:                newConn(socket),
 		pending:             map[uint64]*Call{},
-		timeoutCallDuration: timeoutCallDuration,
+		callTimeoutDuration: defCallTimeoutDuration,
 	}
 	return client
+}
+
+func (c *Client) SetCallTimeout(timeoutDuration time.Duration) *Client {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.callTimeoutDuration = timeoutDuration
+	return c
+}
+
+func (c *Client) SetHandlerOneWay(handler func(pid int32, args []byte)) *Client {
+	c.setHandlerOneWay(handler)
+	return c
 }
 
 func (c *Client) Run() error {
@@ -87,7 +95,7 @@ func (c *Client) Call(pid int32, args []byte) ([]byte, error) {
 
 func (c *Client) Go(pid int32, args []byte) *Call {
 	seq := atomic.AddUint64(&c.seq, 1)
-	call := c.callPush(seq, c.timeoutCallDuration)
+	call := c.callPush(seq, c.callTimeoutDuration)
 
 	if err := c.call(pid, seq, args); err != nil {
 		c.callError(seq, err)

@@ -13,8 +13,7 @@ func TestRPC(t *testing.T) {
 	data := []byte{1}
 	var server *Server
 	go hnet.ListenSocket("tcp", addr, func(socket *hnet.Socket) {
-		server = NewServer()
-		server.SetSocket(socket)
+		server = NewServer(socket)
 		server.SetHandlerCall(func(pid int32, seq uint64, args []byte) {
 			switch pid {
 			case 1:
@@ -32,8 +31,7 @@ func TestRPC(t *testing.T) {
 	})
 
 	socket, _ := hnet.ConnectSocket("tcp", addr)
-	client := NewClientWithOption(time.Second)
-	client.SetSocket(socket)
+	client := NewClient(socket).SetCallTimeout(time.Second)
 	client.SetHandlerOneWay(func(pid int32, args []byte) {
 		if pid != 4 || !bytes.Equal(data, args) {
 			t.Errorf("client receive oneWay fail.")

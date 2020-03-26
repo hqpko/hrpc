@@ -16,17 +16,11 @@ type conn struct {
 	handlerOneWay func(pid int32, args []byte)
 }
 
-func newConn() *conn {
-	return &conn{readBuffer: hbuffer.NewBuffer(), writeBuffer: hbuffer.NewBuffer()}
+func newConn(socket *hnet.Socket) *conn {
+	return &conn{socket: socket, readBuffer: hbuffer.NewBuffer(), writeBuffer: hbuffer.NewBuffer()}
 }
 
-func (c *conn) SetSocket(socket *hnet.Socket) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	c.socket = socket
-}
-
-func (c *conn) SetHandlerOneWay(handler func(pid int32, args []byte)) {
+func (c *conn) setHandlerOneWay(handler func(pid int32, args []byte)) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	c.handlerOneWay = handler
