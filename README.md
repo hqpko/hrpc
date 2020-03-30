@@ -22,8 +22,7 @@ func main() {
 	time.Sleep(time.Second)
 
 	socket, _ := hnet.ConnectSocket("tcp", rpcAddr)
-	client := hrpc.NewClientWithOption(time.Second)
-	client.SetSocket(socket)
+	client := hrpc.NewClient(socket).SetCallTimeout(time.Second)
 
 	// client 仅能注册 仅接收无返回(oneWay) 回调，避免死锁
 	client.SetHandlerOneWay(func(pid int32, args []byte) {
@@ -53,8 +52,7 @@ func main() {
 
 func listenConn() {
 	hnet.ListenSocket("tcp", rpcAddr, func(socket *hnet.Socket) {
-		server = hrpc.NewServer()
-		server.SetSocket(socket)
+		server = hrpc.NewServer(socket)
 
 		// server 端设置应答式回调
 		server.SetHandlerCall(func(pid int32, seq uint64, args []byte) {
