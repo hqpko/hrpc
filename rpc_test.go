@@ -12,7 +12,7 @@ func TestRPC(t *testing.T) {
 	addr := "localhost:9919"
 	data := []byte{1}
 	var server *Server
-	go hnet.ListenSocket("tcp", addr, func(socket *hnet.Socket) {
+	go hnet.ListenSocket(addr, func(socket *hnet.Socket) {
 		server = NewServer(socket)
 		server.SetHandlerCall(func(pid int32, seq uint64, args []byte) {
 			switch pid {
@@ -30,7 +30,7 @@ func TestRPC(t *testing.T) {
 		_ = server.Run()
 	})
 
-	socket, _ := hnet.ConnectSocket("tcp", addr)
+	socket, _ := hnet.ConnectSocket(addr)
 	client := NewClient(socket).SetCallTimeout(time.Second)
 	client.SetHandlerOneWay(func(pid int32, args []byte) {
 		if pid != 4 || !bytes.Equal(data, args) {

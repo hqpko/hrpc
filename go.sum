@@ -1,6 +1,4 @@
-github.com/hqpko/hbuffer v0.2.3 h1:70f3ouzj5JPf1mtP3QyudP6sljDA3Db3JOlDNMjCsr0=
-github.com/hqpko/hbuffer v0.2.3/go.mod h1:bmBkq1tUQianD4zmdGcpHj3CGq1mErKU7/XqyJIVgJA=
 github.com/hqpko/hbuffer v0.3.2 h1:Pq4d4rvCWTZPy1KCmMnxem1RRL8tu1X1zGGu1bYKF9o=
 github.com/hqpko/hbuffer v0.3.2/go.mod h1:bmBkq1tUQianD4zmdGcpHj3CGq1mErKU7/XqyJIVgJA=
-github.com/hqpko/hnet v0.4.0 h1:He0R18RizWTYpt185qmJXhL+jOc3MUhEvNuVS1jvHeg=
-github.com/hqpko/hnet v0.4.0/go.mod h1:XcuVexldis/SHfMpMLAEv97YGbbEEqaG94s9vWF9sB4=
+github.com/hqpko/hnet v0.5.0 h1:i9IXWhnriUbnXrdiLvQunXXWKW+kYLzwB5JBdwabwOk=
+github.com/hqpko/hnet v0.5.0/go.mod h1:FRFdFEsfkHHVjg1oWBRq0MZXf5+ZazUlO7ewR1S+UKU=
