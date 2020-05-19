@@ -41,21 +41,22 @@ func (c *conn) setHandlerCall(handler func(pid int32, seq uint64, args []byte)) 
 }
 
 func (c *conn) run() error {
-	return c.socket.ReadBuffer(func(buffer *hbuffer.Buffer) {
-		msgType, _ := buffer.ReadByte()
+	return c.socket.ReadPacket(func(packet []byte) {
+		c.readBuffer.Reset().SetBytes(packet)
+		msgType, _ := c.readBuffer.ReadByte()
 		switch msgType {
 		case msgTypeOneWay:
-			pid, _ := buffer.ReadInt32()
-			c.handlerOneWay(pid, buffer.CopyRestOfBytes())
+			pid, _ := c.readBuffer.ReadInt32()
+			c.handlerOneWay(pid, c.readBuffer.GetRestOfBytes())
 		case msgTypeCall:
-			pid, _ := buffer.ReadInt32()
-			seq, _ := buffer.ReadUint64()
-			c.handlerCall(pid, seq, buffer.CopyRestOfBytes())
+			pid, _ := c.readBuffer.ReadInt32()
+			seq, _ := c.readBuffer.ReadUint64()
+			c.handlerCall(pid, seq, c.readBuffer.GetRestOfBytes())
 		case msgTypeReply:
-			seq, _ := buffer.ReadUint64()
-			c.pending.reply(seq, buffer.CopyRestOfBytes())
+			seq, _ := c.readBuffer.ReadUint64()
+			c.pending.reply(seq, c.readBuffer.GetRestOfBytes())
 		}
-	}, c.readBuffer.Reset)
+	})
 }
 
 func (c *conn) oneWay(pid int32, args []byte) error {
