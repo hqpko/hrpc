@@ -65,7 +65,7 @@ func (c *conn) oneWay(pid int32, args []byte) error {
 	return c.socket.WriteBuffer(c.fillOneWay(pid, args))
 }
 
-func (c *conn) call(pid int32, args []byte) *Call {
+func (c *conn) call(pid int32, args []byte) *call {
 	call, seq := c.pending.new()
 	if err := c.tryCall(pid, seq, args); err != nil {
 		c.pending.error(seq, err)

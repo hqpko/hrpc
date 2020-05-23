@@ -10,23 +10,23 @@ const defCallTimeoutDuration = time.Second * 8
 
 var ErrCallTimeout = errors.New("call timeout")
 
-type Call struct {
+type call struct {
 	reply []byte
 	err   error
-	c     chan *Call
+	c     chan *call
 	timer *time.Timer
 }
 
-func newCall() *Call {
-	return &Call{c: make(chan *Call, 1)}
+func newCall() *call {
+	return &call{c: make(chan *call, 1)}
 }
 
-func (c *Call) setTimeout(timeout time.Duration, f func()) *Call {
+func (c *call) setTimeout(timeout time.Duration, f func()) *call {
 	c.timer = time.AfterFunc(timeout, f)
 	return c
 }
 
-func (c *Call) done() {
+func (c *call) done() {
 	c.timer.Stop()
 	select {
 	case c.c <- c:
@@ -34,17 +34,17 @@ func (c *Call) done() {
 	}
 }
 
-func (c *Call) doneWithErr(err error) {
+func (c *call) doneWithErr(err error) {
 	c.err = err
 	c.done()
 }
 
-func (c *Call) doneWithReply(reply []byte) {
+func (c *call) doneWithReply(reply []byte) {
 	c.reply = reply
 	c.done()
 }
 
-func (c *Call) Done() ([]byte, error) {
+func (c *call) Done() ([]byte, error) {
 	<-c.c
 	return c.reply, c.err
 }
@@ -53,11 +53,11 @@ type pending struct {
 	lock    sync.Mutex
 	seq     uint64
 	timeout time.Duration
-	pending map[uint64]*Call
+	pending map[uint64]*call
 }
 
 func newPending() *pending {
-	return &pending{timeout: defCallTimeoutDuration, pending: map[uint64]*Call{}}
+	return &pending{timeout: defCallTimeoutDuration, pending: map[uint64]*call{}}
 }
 
 func (p *pending) setTimeout(timeout time.Duration) {
@@ -66,7 +66,7 @@ func (p *pending) setTimeout(timeout time.Duration) {
 	p.timeout = timeout
 }
 
-func (p *pending) new() (*Call, uint64) {
+func (p *pending) new() (*call, uint64) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	p.seq++
@@ -90,7 +90,7 @@ func (p *pending) error(seq uint64, err error) {
 	}
 }
 
-func (p *pending) pop(seq uint64) *Call {
+func (p *pending) pop(seq uint64) *call {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	if call, ok := p.pending[seq]; ok {
