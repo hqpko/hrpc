@@ -65,12 +65,12 @@ func (c *conn) oneWay(pid int32, args []byte) error {
 	return c.socket.WriteBuffer(c.fillOneWay(pid, args))
 }
 
-func (c *conn) call(pid int32, args []byte) *call {
+func (c *conn) call(pid int32, args []byte) ([]byte, error) {
 	call, seq := c.pending.new()
 	if err := c.tryCall(pid, seq, args); err != nil {
 		c.pending.error(seq, err)
 	}
-	return call
+	return call.Done()
 }
 
 func (c *conn) tryCall(pid int32, seq uint64, args []byte) error {

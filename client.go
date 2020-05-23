@@ -36,7 +36,7 @@ func (c *Client) OneWay(pid int32, args []byte) error {
 }
 
 func (c *Client) Call(pid int32, args []byte) ([]byte, error) {
-	return c.call(pid, args).Done()
+	return c.call(pid, args)
 }
 
 func (c *Client) Close() error {
