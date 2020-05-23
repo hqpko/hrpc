@@ -21,7 +21,7 @@ func main() {
 	go listenConn()
 	time.Sleep(time.Second)
 
-	socket, _ := hnet.ConnectSocket("tcp", rpcAddr)
+	socket, _ := hnet.ConnectSocket(rpcAddr)
 	client := hrpc.NewClient(socket).SetCallTimeout(time.Second)
 
 	// client 仅能注册 仅接收无返回(oneWay) 回调，避免死锁
@@ -35,11 +35,6 @@ func main() {
 	reply, err := client.Call(1, []byte{1})
 	fmt.Printf("Client.Call, reply:%v, error:%v\n", reply, err) // [1],nil
 
-	// client.Go 请求并返回请求产生的 Call，不阻塞等待返回，可以使用 call.Done() 等待返回
-	call := client.Go(1, []byte{1})
-	reply, timeout := call.Done()
-	fmt.Printf("Client.Go, reply:%v, timeout:%v\n", reply, timeout) // [1],nil
-
 	// client.OneWay 仅发送请求，无返回
 	err = client.OneWay(2, []byte{1})
 	fmt.Printf("Client.OneWay, error:%v\n", err) // nil
@@ -51,7 +46,7 @@ func main() {
 }
 
 func listenConn() {
-	hnet.ListenSocket("tcp", rpcAddr, func(socket *hnet.Socket) {
+	hnet.ListenSocket(rpcAddr, func(socket *hnet.Socket) {
 		server = hrpc.NewServer(socket)
 
 		// server 端设置应答式回调
