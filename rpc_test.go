@@ -58,15 +58,6 @@ func TestRPC(t *testing.T) {
 		t.Errorf("Client.Call timeout fail")
 	}
 
-	// Client.Go
-	if call := client.Go(1, data); call.err != nil {
-		t.Errorf("Client.Go error:%s", call.err.Error())
-	} else if reply, err := call.Done(); err != nil {
-		t.Errorf("Client.Go fail %v", err)
-	} else if !bytes.Equal(reply, data) {
-		t.Errorf("Client.Go fail, reply:%v,shouldBe:%v\n", reply, data)
-	}
-
 	// Client.OneWay
 	if err := client.OneWay(3, data); err != nil {
 		t.Errorf("Client.OneWay error:%s", err.Error())

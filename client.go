@@ -39,10 +39,6 @@ func (c *Client) Call(pid int32, args []byte) ([]byte, error) {
 	return c.call(pid, args).Done()
 }
 
-func (c *Client) Go(pid int32, args []byte) *Call {
-	return c.call(pid, args)
-}
-
 func (c *Client) Close() error {
 	return c.close()
 }
