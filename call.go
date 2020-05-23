@@ -9,6 +9,9 @@ import (
 const defCallTimeoutDuration = time.Second * 8
 
 var ErrCallTimeout = errors.New("call timeout")
+var callPool = sync.Pool{
+	New: func() interface{} { return newCall() },
+}
 
 type call struct {
 	reply []byte
@@ -24,6 +27,12 @@ func newCall() *call {
 func (c *call) setTimeout(timeout time.Duration, f func()) *call {
 	c.timer = time.AfterFunc(timeout, f)
 	return c
+}
+
+func (c *call) reset() {
+	c.reply = nil
+	c.err = nil
+	c.timer = nil
 }
 
 func (c *call) done() {
@@ -66,16 +75,22 @@ func (p *pending) setTimeout(timeout time.Duration) {
 	p.timeout = timeout
 }
 
-func (p *pending) new() (*call, uint64) {
+func (p *pending) get() (*call, uint64) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	p.seq++
 	seq := p.seq
-	call := newCall().setTimeout(p.timeout, func() {
+	call := callPool.Get().(*call)
+	call.setTimeout(p.timeout, func() {
 		p.error(seq, ErrCallTimeout)
 	})
 	p.pending[seq] = call
 	return call, seq
+}
+
+func (p *pending) put(call *call) {
+	call.reset()
+	callPool.Put(call)
 }
 
 func (p *pending) reply(seq uint64, reply []byte) {
