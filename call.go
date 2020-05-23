@@ -70,11 +70,12 @@ func (p *pending) new() (*Call, uint64) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	p.seq++
+	seq := p.seq
 	call := newCall().setTimeout(p.timeout, func() {
-		p.error(p.seq, ErrCallTimeout)
+		p.error(seq, ErrCallTimeout)
 	})
-	p.pending[p.seq] = call
-	return call, p.seq
+	p.pending[seq] = call
+	return call, seq
 }
 
 func (p *pending) reply(seq uint64, reply []byte) {

@@ -2,6 +2,7 @@ package hrpc
 
 import (
 	"bytes"
+	"sync"
 	"testing"
 	"time"
 
@@ -47,6 +48,12 @@ func TestRPC(t *testing.T) {
 	}
 
 	// Client.Call timeout
+	w := &sync.WaitGroup{}
+	w.Add(2)
+	go testCallTimeout(w, client, data, t)
+	go testCallTimeout(w, client, data, t)
+	w.Wait()
+
 	if _, err := client.Call(2, data); err != ErrCallTimeout {
 		t.Errorf("Client.Call timeout fail")
 	}
@@ -72,4 +79,11 @@ func TestRPC(t *testing.T) {
 
 	_ = client.Close()
 	_ = server.Close()
+}
+
+func testCallTimeout(w *sync.WaitGroup, client *Client, data []byte, t *testing.T) {
+	if _, err := client.Call(2, data); err != ErrCallTimeout {
+		t.Errorf("Client.Call timeout fail")
+	}
+	w.Done()
 }
