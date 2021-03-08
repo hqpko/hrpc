@@ -2,6 +2,8 @@
 
 ### example
 
+> 注意：正常情况下不建议使用 `server.Call`，容易产生死锁，仅在确定不会死锁的情况下使用
+
 ```go
 package main
 
@@ -24,7 +26,7 @@ func main() {
 	socket, _ := hnet.ConnectSocket(rpcAddr)
 	client := hrpc.NewClient(socket).SetCallTimeout(time.Second)
 
-	// client 仅能注册 仅接收无返回(oneWay) 回调，避免死锁
+	// client 仅能注册 oneWay 方式回调，避免死锁
 	client.SetHandlerOneWay(func(pid int32, args []byte) {
 		// one way handler
 		fmt.Printf("Server.OneWay\n")
@@ -35,11 +37,11 @@ func main() {
 	reply, err := client.Call(1, []byte{1})
 	fmt.Printf("Client.Call, reply:%v, error:%v\n", reply, err) // [1],nil
 
-	// client.OneWay 仅发送请求，无返回
+	// client.OneWay 仅发送请求
 	err = client.OneWay(2, []byte{1})
 	fmt.Printf("Client.OneWay, error:%v\n", err) // nil
 
-	// server.OneWay 仅发送请求，无返回，再次说明，server 不支持 Call，避免和 Client 互相 Call 导致死锁
+	// server.OneWay 仅发送请求
 	server.OneWay(3, []byte{1})
 
 	time.Sleep(time.Second)
