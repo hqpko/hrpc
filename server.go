@@ -12,11 +12,6 @@ func NewServer(socket *hnet.Socket) *Server {
 	return &Server{conn: newConn(socket)}
 }
 
-// 从 server 派生出来一个 Client，共用 conn，用于在非正常情况下，server call server
-func (s *Server) DeriveClient() *Client {
-	return &Client{conn: s.conn}
-}
-
 func (s *Server) SetHandlerOneWay(handler func(pid int32, args []byte)) *Server {
 	s.setHandlerOneWay(handler)
 	return s
