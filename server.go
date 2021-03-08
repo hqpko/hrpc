@@ -22,18 +22,11 @@ func (s *Server) SetHandlerCall(handler func(pid int32, seq uint64, args []byte)
 	return s
 }
 
-func (s *Server) Run() error {
-	return s.run()
-}
-
-func (s *Server) OneWay(pid int32, args []byte) error {
-	return s.oneWay(pid, args)
-}
-
 func (s *Server) Reply(seq uint64, reply []byte) error {
 	return s.reply(seq, reply)
 }
 
-func (s *Server) Close() error {
-	return s.close()
+// 正常情况下不推荐使用，server 间互相 Call 容易导致死锁，仅在确定不会死锁的情况下使用
+func (s *Server) Call(pid int32, args []byte) ([]byte, error) {
+	return s.conn.Call(pid, args)
 }

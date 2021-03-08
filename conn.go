@@ -40,7 +40,7 @@ func (c *conn) setHandlerCall(handler func(pid int32, seq uint64, args []byte)) 
 	c.handlerCall = handler
 }
 
-func (c *conn) run() error {
+func (c *conn) Run() error {
 	return c.socket.ReadPacket(func(packet []byte) {
 		c.readBuffer.Reset().SetBytes(packet)
 		msgType, _ := c.readBuffer.ReadByte()
@@ -59,13 +59,13 @@ func (c *conn) run() error {
 	})
 }
 
-func (c *conn) oneWay(pid int32, args []byte) error {
+func (c *conn) OneWay(pid int32, args []byte) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	return c.socket.WriteBuffer(c.fillOneWay(pid, args))
 }
 
-func (c *conn) call(pid int32, args []byte) ([]byte, error) {
+func (c *conn) Call(pid int32, args []byte) ([]byte, error) {
 	call, seq := c.pending.get()
 	defer c.pending.put(call)
 	if err := c.tryCall(pid, seq, args); err != nil {
@@ -114,7 +114,7 @@ func (c *conn) fillCall(pid int32, seq uint64, args []byte) *hbuffer.Buffer {
 		UpdateHead()
 }
 
-func (c *conn) close() (err error) {
+func (c *conn) Close() (err error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	if c.socket != nil {
