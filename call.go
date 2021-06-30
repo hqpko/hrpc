@@ -21,22 +21,18 @@ type call struct {
 }
 
 func newCall() *call {
-	return &call{c: make(chan *call, 1)}
-}
-
-func (c *call) setTimeout(timeout time.Duration, f func()) *call {
-	c.timer = time.AfterFunc(timeout, f)
-	return c
+	return &call{c: make(chan *call, 1), timer: time.NewTimer(defCallTimeoutDuration)}
 }
 
 func (c *call) reset() {
+	if !c.timer.Stop() && c.err != ErrCallTimeout {
+		<-c.timer.C
+	}
 	c.reply = nil
 	c.err = nil
-	c.timer = nil
 }
 
 func (c *call) done() {
-	c.timer.Stop()
 	select {
 	case c.c <- c:
 	default:
@@ -54,7 +50,11 @@ func (c *call) doneWithReply(reply []byte) {
 }
 
 func (c *call) Done() ([]byte, error) {
-	<-c.c
+	select {
+	case <-c.c:
+	case <-c.timer.C:
+		c.err = ErrCallTimeout
+	}
 	return c.reply, c.err
 }
 
@@ -81,9 +81,7 @@ func (p *pending) get() (*call, uint64) {
 	p.seq++
 	seq := p.seq
 	call := callPool.Get().(*call)
-	call.setTimeout(p.timeout, func() {
-		p.error(seq, ErrCallTimeout)
-	})
+	call.timer.Reset(p.timeout)
 	p.pending[seq] = call
 	return call, seq
 }
