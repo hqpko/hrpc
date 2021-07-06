@@ -1,6 +1,7 @@
 package hrpc
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/hqpko/hbuffer"
@@ -13,6 +14,8 @@ const (
 	msgTypeOneWay
 	msgTypeReply
 )
+
+var ErrConnClosed = errors.New("conn closed")
 
 type conn struct {
 	lock          sync.RWMutex
@@ -62,6 +65,9 @@ func (c *conn) Run() error {
 func (c *conn) OneWay(pid int32, args []byte) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	if c.socket == nil {
+		return ErrConnClosed
+	}
 	return c.socket.WriteBuffer(c.fillOneWay(pid, args))
 }
 
@@ -77,12 +83,18 @@ func (c *conn) Call(pid int32, args []byte) ([]byte, error) {
 func (c *conn) tryCall(pid int32, seq uint64, args []byte) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	if c.socket == nil {
+		return ErrConnClosed
+	}
 	return c.socket.WriteBuffer(c.fillCall(pid, seq, args))
 }
 
 func (c *conn) reply(seq uint64, reply []byte) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	if c.socket == nil {
+		return ErrConnClosed
+	}
 	return c.socket.WriteBuffer(c.fillReply(seq, reply))
 }
 
