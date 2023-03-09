@@ -15,7 +15,7 @@ func TestRPC(t *testing.T) {
 	var server *Server
 	go hnet.ListenSocket(addr, func(socket *hnet.Socket) {
 		server = NewServer(socket)
-		server.SetHandlerCall(func(pid int32, seq uint64, args []byte) {
+		server.SetHandlerCall(func(pid int32, seq uint32, args []byte) {
 			switch pid {
 			case 1:
 				_ = server.Reply(seq, args)

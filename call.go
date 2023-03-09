@@ -60,13 +60,13 @@ func (c *call) Done() ([]byte, error) {
 
 type pending struct {
 	lock    sync.Mutex
-	seq     uint64
+	seq     uint32
 	timeout time.Duration
-	pending map[uint64]*call
+	pending map[uint32]*call
 }
 
 func newPending() *pending {
-	return &pending{timeout: defCallTimeoutDuration, pending: map[uint64]*call{}}
+	return &pending{timeout: defCallTimeoutDuration, pending: map[uint32]*call{}}
 }
 
 func (p *pending) setTimeout(timeout time.Duration) {
@@ -75,7 +75,7 @@ func (p *pending) setTimeout(timeout time.Duration) {
 	p.timeout = timeout
 }
 
-func (p *pending) get() (*call, uint64) {
+func (p *pending) get() (*call, uint32) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	p.seq++
@@ -91,19 +91,19 @@ func (p *pending) put(call *call) {
 	callPool.Put(call)
 }
 
-func (p *pending) reply(seq uint64, reply []byte) {
+func (p *pending) reply(seq uint32, reply []byte) {
 	if call := p.pop(seq); call != nil {
 		call.doneWithReply(reply)
 	}
 }
 
-func (p *pending) error(seq uint64, err error) {
+func (p *pending) error(seq uint32, err error) {
 	if call := p.pop(seq); call != nil {
 		call.doneWithErr(err)
 	}
 }
 
-func (p *pending) pop(seq uint64) *call {
+func (p *pending) pop(seq uint32) *call {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	if call, ok := p.pending[seq]; ok {
