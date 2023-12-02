@@ -41,7 +41,6 @@ func (c *call) done() {
 
 func (c *call) doneWithErr(err error) {
 	c.err = err
-	c.done()
 }
 
 func (c *call) doneWithReply(reply []byte) {
