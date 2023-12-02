@@ -73,7 +73,8 @@ func (c *conn) OneWay(pid int32, args []byte) error {
 
 func (c *conn) Call(pid int32, args []byte) ([]byte, error) {
 	call, seq := c.pending.get()
-	defer c.pending.put(call)
+	defer c.safeReturnByCall(seq, call)
+
 	if err := c.tryCall(pid, seq, args); err != nil {
 		c.pending.error(seq, err)
 	}
@@ -134,4 +135,24 @@ func (c *conn) Close() (err error) {
 		c.socket = nil
 	}
 	return
+}
+
+func (c *conn) safeReturnByCall(seq uint32, cal *call) {
+	//超时处理
+	if isErrCallTimeout(cal.err) {
+		//避免边缘情况发生: 此时代表 reply 操作成功, 会向 cal.c 发送信号，再次复用会导致 Call() 异常退出，故不归还对象池中
+		if tc := c.pending.pop(seq); tc == nil {
+			return
+		}
+	}
+
+	//将call 归还对象池中
+	c.pending.put(cal)
+}
+
+func isErrCallTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	return err == ErrCallTimeout
 }
