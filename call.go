@@ -28,6 +28,10 @@ func (c *call) reset() {
 	if !c.timer.Stop() && c.err != ErrCallTimeout {
 		<-c.timer.C
 	}
+	select {
+	case <-c.c:
+	default:
+	}
 	c.reply = nil
 	c.err = nil
 }
