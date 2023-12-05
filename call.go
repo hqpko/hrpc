@@ -86,29 +86,30 @@ func (p *pending) get() (*call, uint32) {
 	return call, seq
 }
 
-func (p *pending) put(call *call) {
+func (p *pending) put(seq uint32, call *call) {
+	p.del(seq)
 	call.reset()
 	callPool.Put(call)
 }
 
 func (p *pending) reply(seq uint32, reply []byte) {
-	if call := p.pop(seq); call != nil {
-		call.doneWithReply(reply)
-	}
-}
-
-func (p *pending) error(seq uint32, err error) {
-	if call := p.pop(seq); call != nil {
-		call.doneWithErr(err)
+	if c := p.pop(seq); c != nil {
+		c.doneWithReply(reply)
 	}
 }
 
 func (p *pending) pop(seq uint32) *call {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	if call, ok := p.pending[seq]; ok {
+	if c, ok := p.pending[seq]; ok {
 		delete(p.pending, seq)
-		return call
+		return c
 	}
 	return nil
+}
+
+func (p *pending) del(seq uint32) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	delete(p.pending, seq)
 }

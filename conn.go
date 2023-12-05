@@ -73,9 +73,9 @@ func (c *conn) OneWay(pid int32, args []byte) error {
 
 func (c *conn) Call(pid int32, args []byte) ([]byte, error) {
 	call, seq := c.pending.get()
-	defer c.pending.put(call)
+	defer c.pending.put(seq, call)
 	if err := c.tryCall(pid, seq, args); err != nil {
-		c.pending.error(seq, err)
+		call.doneWithErr(err)
 	}
 	return call.Done()
 }
