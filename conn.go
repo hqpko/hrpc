@@ -75,7 +75,7 @@ func (c *conn) Call(pid int32, args []byte) ([]byte, error) {
 	call, seq := c.pending.get()
 	defer c.pending.put(seq, call)
 	if err := c.tryCall(pid, seq, args); err != nil {
-		call.doneWithErr(err)
+		return nil, err
 	}
 	return call.Done()
 }

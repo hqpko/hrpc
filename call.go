@@ -57,7 +57,7 @@ func (c *call) Done() ([]byte, error) {
 	select {
 	case <-c.c:
 	case <-c.timer.C:
-		c.err = ErrCallTimeout
+		return nil, ErrCallTimeout
 	}
 	return c.reply, c.err
 }
