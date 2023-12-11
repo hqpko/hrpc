@@ -14,52 +14,41 @@ var callPool = sync.Pool{
 }
 
 type call struct {
-	reply []byte
-	err   error
-	c     chan *call
+	c     chan []byte
 	timer *time.Timer
 }
 
 func newCall() *call {
-	return &call{c: make(chan *call, 1), timer: time.NewTimer(defCallTimeoutDuration)}
+	return &call{c: make(chan []byte, 1), timer: time.NewTimer(defCallTimeoutDuration)}
 }
 
 func (c *call) reset() {
-	if !c.timer.Stop() && c.err != ErrCallTimeout {
-		<-c.timer.C
+	if !c.timer.Stop() {
+		select {
+		case <-c.timer.C:
+		default:
+		}
 	}
 	select {
 	case <-c.c:
 	default:
 	}
-	c.reply = nil
-	c.err = nil
 }
 
-func (c *call) done() {
+func (c *call) reply(reply []byte) {
 	select {
-	case c.c <- c:
+	case c.c <- reply:
 	default:
 	}
-}
-
-func (c *call) doneWithErr(err error) {
-	c.err = err
-	c.done()
-}
-
-func (c *call) doneWithReply(reply []byte) {
-	c.reply = reply
-	c.done()
 }
 
 func (c *call) Done() ([]byte, error) {
 	select {
-	case <-c.c:
+	case b := <-c.c:
+		return b, nil
 	case <-c.timer.C:
 		return nil, ErrCallTimeout
 	}
-	return c.reply, c.err
 }
 
 type pending struct {
@@ -98,7 +87,7 @@ func (p *pending) put(seq uint32, call *call) {
 
 func (p *pending) reply(seq uint32, reply []byte) {
 	if c := p.pop(seq); c != nil {
-		c.doneWithReply(reply)
+		c.reply(reply)
 	}
 }
 
