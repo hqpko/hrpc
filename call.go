@@ -79,8 +79,7 @@ func (p *pending) get() (*call, uint32) {
 	return call, seq
 }
 
-func (p *pending) put(seq uint32, call *call) {
-	p.del(seq)
+func (p *pending) put(call *call) {
 	call.reset()
 	callPool.Put(call)
 }
